@@ -1,6 +1,7 @@
+<div align="center">
+
 # 🐳 DevDock - Cloud IDE Platform
 
-<div align="center">
 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)
 ![React](https://img.shields.io/badge/React-18+-blue.svg)
