@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-
 # 🐳 DevDock - Cloud IDE Platform
 
 <div align="center">
