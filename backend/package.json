@@ -1,0 +1,41 @@
+{
+  "name": "devdock-backend",
+  "version": "1.0.0",
+  "description": "Backend server for DevDock - AI-powered web IDE",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "node src/tests/testRunner.js",
+    "test:unit": "node src/tests/testRunner.js --unit",
+    "test:integration": "node src/tests/testRunner.js --integration",
+    "test:api": "node src/tests/testRunner.js --api",
+    "setup": "node -e \"console.log('Creating .env from .env.example...'); require('fs').copyFileSync('.env.example', '.env'); console.log('✅ .env created. Please update MongoDB URI and other secrets.');\"",
+    "db:setup": "node src/scripts/setup-mongo.js"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.6.0",
+    "morgan": "^1.10.1",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.2",
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "ai",
+    "ide",
+    "web-development",
+    "code-editor"
+  ],
+  "author": "AI IDE Team",
+  "license": "MIT"
+}

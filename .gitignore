@@ -1,0 +1,180 @@
+# ==============================================
+# DevDock Project .gitignore
+# ==============================================
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==============================================
+# Node.js Dependencies
+# ==============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.npm
+.eslintcache
+*.tsbuildinfo
+
+# ==============================================
+# Build Outputs
+# ==============================================
+dist/
+build/
+coverage/
+.nyc_output/
+
+# ==============================================
+# Database & Backup Files
+# ==============================================
+db-backup/
+*.db
+*.sqlite
+*.sqlite3
+dump.rdb
+mongodb_data/
+
+# ==============================================
+# Project Documentation (Keep Local)
+# ==============================================
+info.txt
+project_info.txt
+web-info.txt
+GOOGLE_OAUTH_GUIDE.md
+OAUTH_SETUP.md
+
+# Test Data Files
+test-*.json
+*.test.json
+
+# ==============================================
+# IDE & Editor Files
+# ==============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==============================================
+# Logs
+# ==============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ==============================================
+# Runtime & Temporary Files
+# ==============================================
+*.pid
+*.seed
+*.pid.lock
+lib-cov/
+.grunt/
+.lock-wscript/
+.wafpickle-*
+.node_repl_history
+*.tgz
+.yarn-integrity
+
+# ==============================================
+# Docker & Container Files
+# ==============================================
+.docker/
+docker-compose.override.yml
+.dockerignore
+
+# ==============================================
+# Package Manager Files
+# ==============================================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-store/
+
+# ==============================================
+# Frontend Specific
+# ==============================================
+.cache/
+.parcel-cache/
+.nuxt/
+.next/
+.vercel/
+.turbo/
+
+# ==============================================
+# Backend Specific
+# ==============================================
+uploads/
+sessions/
+.sessions/
+public/uploads/
+
+# ==============================================
+# SSL Certificates (if any)
+# ==============================================
+*.pem
+*.key
+*.crt
+*.p12
+
+# ==============================================
+# Backup Files
+# ==============================================
+backup-*.js
+*.backup
+*.bak
+
+# ==============================================
+# OS Generated Files
+# ==============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==============================================
+# Development Tools
+# ==============================================
+.eslintrc.js
+.eslintrc.cjs
+.prettierrc
+.prettierrc.js
+.prettierrc.json
+.stylelintrc.js
+.commitlintrc.js
+
+# ==============================================
+# Archives
+# ==============================================
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# ==============================================
+# Keep these files (explicitly track)
+# ==============================================
+!.env.example
+!.gitignore
+!README.md
+!package.json
+!*/package.json
