@@ -1,0 +1,373 @@
+/* Authentication Loading Screen */
+.auth-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Main App Styles */
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--primary-color);
+  color: var(--text-primary);
+  font-family: 'Fira Code', 'Monaco', 'Menlo', monospace;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Grid-based IDE layout */
+.layout-grid {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 2px minmax(0, 1fr) var(--ai-resizer-width) var(--ai-width);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  width: 100%;
+}
+
+.grid-sidebar {
+  grid-column: 1;
+  min-width: 150px;
+  max-width: 600px;
+  overflow: hidden;
+}
+
+.grid-main {
+  grid-column: 3;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+}
+
+.grid-main.has-terminal {
+  grid-template-rows: minmax(0, 1fr) 2px var(--terminal-height);
+}
+
+.grid-editor,
+.grid-terminal,
+.grid-ai {
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid-editor,
+.grid-ai {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-ai {
+  grid-column: 5;
+  overflow: hidden;
+  border-left: 1px solid var(--border-color);
+}
+
+.g-resizer {
+  background: var(--border-color);
+  outline: none;
+}
+
+.g-resizer.vertical {
+  cursor: col-resize;
+}
+
+.g-resizer.vertical.left { grid-column: 2; }
+.g-resizer.vertical.right { grid-column: 4; }
+
+.g-resizer.horizontal {
+  grid-row: 2;
+  cursor: row-resize;
+}
+
+.g-resizer:hover {
+  background: var(--accent-color);
+  transition: background 0.2s ease;
+}
+
+.g-resizer:focus,
+.g-resizer:active {
+  box-shadow: 0 0 0 1px var(--accent-color) inset;
+  background: var(--accent-color);
+}
+
+/* Animation for panel toggles */
+.panel-enter {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+.panel-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.panel-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.panel-exit-active {
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity 300ms, transform 300ms;
+}
+
+/* Loading overlay */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(30, 30, 30, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-primary);
+}
+
+.loading-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Connection status indicator */
+.connection-status {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 1001;
+  transition: all 0.3s ease;
+}
+
+.connection-status.connected {
+  background: var(--success-color);
+  color: white;
+}
+
+.connection-status.disconnected {
+  background: var(--error-color);
+  color: white;
+}
+
+/* Error boundary styles */
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 20px;
+  text-align: center;
+  background: var(--primary-color);
+  color: var(--text-primary);
+}
+
+.error-boundary h1 {
+  color: var(--error-color);
+  margin-bottom: 16px;
+}
+
+.error-boundary p {
+  margin-bottom: 20px;
+  max-width: 600px;
+  line-height: 1.5;
+}
+
+.error-boundary .error-details {
+  background: var(--secondary-color);
+  padding: 16px;
+  border-radius: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  max-width: 800px;
+  overflow-x: auto;
+  text-align: left;
+  margin-top: 20px;
+}
+
+/* Welcome screen styles */
+.welcome-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 20px;
+}
+
+.welcome-logo {
+  font-size: 48px;
+  margin-bottom: 20px;
+  color: var(--accent-color);
+}
+
+.welcome-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.welcome-subtitle {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  max-width: 500px;
+  line-height: 1.5;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.welcome-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 150px;
+}
+
+.welcome-action:hover {
+  background: var(--hover-color);
+  border-color: var(--accent-color);
+}
+
+.welcome-action-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  color: var(--accent-color);
+}
+
+.welcome-action-title {
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.welcome-action-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .app-body {
+    flex-direction: column;
+  }
+  
+  .welcome-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .welcome-action {
+    width: 100%;
+    max-width: 300px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .app {
+    display: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --primary-color: #000000;
+    --secondary-color: #1a1a1a;
+    --tertiary-color: #333333;
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+    --border-color: #666666;
+    --hover-color: #404040;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus styles for accessibility */
+*:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+button:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

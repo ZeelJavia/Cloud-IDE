@@ -1,0 +1,228 @@
+/* Landing Page Component Styles
+   Scope: .landing-page ...
+   Contains scoped copies / extensions of custom utilities used on the landing page.
+*/
+
+/* Scoped CSS variable set (light theme) */
+.landing-page {
+  --background: #ffffff;
+  --foreground: #1f2937;
+  --card: rgba(255, 255, 255, 0.8);
+  --card-foreground: #374151;
+  --popover: rgba(255, 255, 255, 0.9);
+  --popover-foreground: #374151;
+  --primary: #164e63;
+  --primary-foreground: #ffffff;
+  --secondary: #475569;
+  --secondary-foreground: #ffffff;
+  --muted: #f0fdf4;
+  --muted-foreground: #374151;
+  --accent: #84cc16;
+  --accent-foreground: #1f2937;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #f9fafb;
+  --ring: rgba(130, 224, 255, 0.5);
+  --chart-1: #4f46e5;
+  --chart-2: #ec4899;
+  --chart-3: #fbbf24;
+  --chart-4: #22c55e;
+  --chart-5: #3b82f6;
+  --radius: 0.5rem;
+}
+.dark .landing-page {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: rgba(15, 23, 42, 0.8);
+  --card-foreground: #e2e8f0;
+  --popover: rgba(15, 23, 42, 0.9);
+  --popover-foreground: #e2e8f0;
+  --primary: #0ea5e9;
+  --primary-foreground: #0f172a;
+  --secondary: #334155;
+  --secondary-foreground: #f1f5f9;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #84cc16;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #334155;
+  --input: #1e293b;
+  --ring: rgba(14, 165, 233, 0.5);
+  --chart-1: #8b5cf6;
+  --chart-2: #06b6d4;
+  --chart-3: #f59e0b;
+  --chart-4: #10b981;
+  --chart-5: #3b82f6;
+}
+
+/* Glass / lift duplicates (scoped) */
+.landing-page .lp-glass {
+  backdrop-filter: blur(16px) saturate(180%);
+  background-color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+.dark .landing-page .lp-glass {
+  background-color: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+.landing-page .lp-hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.landing-page .lp-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+.dark .landing-page .lp-hover-lift:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Feature badge (currently used via generic badge) */
+.landing-page .lp-feature-badge {
+  backdrop-filter: blur(12px);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.7) 0%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+}
+.dark .landing-page .lp-feature-badge {
+  background: linear-gradient(
+    135deg,
+    rgba(30, 41, 59, 0.9) 0%,
+    rgba(30, 41, 59, 0.6) 100%
+  );
+}
+
+/* CTA Primary button enhancement */
+.landing-page .lp-cta-primary {
+  position: relative;
+  overflow: hidden;
+}
+.landing-page .lp-cta-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 255, 255, 0.25),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.landing-page .lp-cta-primary:hover::after {
+  opacity: 1;
+}
+
+/* Syntax tokens (inherit colors; subtle emphasis) */
+.landing-page .lp-syntax-keyword {
+  font-weight: 500;
+}
+.landing-page .lp-syntax-string {
+  font-style: italic;
+}
+.landing-page .lp-syntax-function {
+  text-decoration: none;
+}
+.landing-page .lp-syntax-variable {
+  text-decoration: none;
+}
+
+/* Local syntax color definitions (light) */
+.landing-page .lp-syntax-keyword {
+  color: #8b5cf6;
+}
+.landing-page .lp-syntax-string {
+  color: #10b981;
+}
+.landing-page .lp-syntax-function {
+  color: #3b82f6;
+}
+.landing-page .lp-syntax-variable {
+  color: #f59e0b;
+}
+.dark .landing-page .lp-syntax-keyword {
+  color: #a78bfa;
+}
+.dark .landing-page .lp-syntax-string {
+  color: #34d399;
+}
+.dark .landing-page .lp-syntax-function {
+  color: #60a5fa;
+}
+.dark .landing-page .lp-syntax-variable {
+  color: #fbbf24;
+}
+
+/* Footer */
+.landing-page footer {
+  backdrop-filter: blur(4px);
+}
+
+@media (max-width: 768px) {
+  .landing-page .lp-cta-primary {
+    width: 100%;
+  }
+}
+
+/* Local animation keyframes (subset used by landing page) */
+@keyframes lp-float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  25% {
+    transform: translateY(-10px) translateX(5px);
+  }
+  50% {
+    transform: translateY(-20px) translateX(0);
+  }
+  75% {
+    transform: translateY(-10px) translateX(-5px);
+  }
+}
+@keyframes lp-gradient {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+@keyframes lp-pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(132, 204, 22, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(132, 204, 22, 0.6);
+  }
+}
+@keyframes lp-slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animation utility classes */
+.landing-page .lp-animate-float {
+  animation: lp-float 6s ease-in-out infinite;
+}
+.landing-page .lp-animate-gradient {
+  animation: lp-gradient 15s ease infinite;
+}
+.landing-page .lp-animate-pulse-glow {
+  animation: lp-pulse-glow 2s ease-in-out infinite;
+}
+.landing-page .lp-animate-slide-in-up {
+  animation: lp-slide-in-up 0.6s ease-out;
+}

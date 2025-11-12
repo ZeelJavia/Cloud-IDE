@@ -1,0 +1,43 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  server: {
+    port: 3000,
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:3001",
+        changeOrigin: true,
+        secure: false,
+        // Keep path as-is; backend expects '/api/*'
+        rewrite: (path) => path,
+      },
+      "/socket.io": {
+        target: "http://127.0.0.1:3001",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
+  build: {
+    outDir: "build",
+    assetsDir: "static",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          monaco: ["@monaco-editor/react"],
+        },
+      },
+    },
+  },
+});

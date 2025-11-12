@@ -1,0 +1,66 @@
+/* Line numbers styling */
+.code-snippet .flex {
+  height: 100%;
+  background-color: #101828;
+}
+
+/* Code syntax highlighting colors */
+.language-javascript {
+  color: #e5e7eb;
+}
+
+.code-snippet pre {
+  color: #e5e7eb;
+}
+
+.code-snippet pre code {
+  color: #e5e7eb;
+  line-height: 1.5;
+}
+
+.code-snippet pre code .comment {
+  color: #6b7280; /* Gray 500 */
+}
+
+.code-snippet pre code .string {
+  color: #a5b4fc; /* Indigo 300 */
+}
+
+.code-snippet pre code .boolean {
+  color: #818cf8; /* Indigo 400 */
+}
+
+/* Comments */
+.language-javascript .token.comment {
+  color: #6b7280;
+}
+
+/* Property names */
+.language-javascript .token.property {
+  color: #93c5fd;
+}
+
+/* Strings */
+.language-javascript .token.string {
+  color: #86efac;
+}
+
+/* Keywords */
+.language-javascript .token.keyword {
+  color: #c084fc;
+}
+
+/* Boolean values */
+.language-javascript .token.boolean {
+  color: #818cf8;
+}
+
+/* Punctuation */
+.language-javascript .token.punctuation {
+  color: #94a3b8;
+}
+
+/* Additional spacing for code readability */
+.code-snippet pre {
+  tab-size: 2;
+}

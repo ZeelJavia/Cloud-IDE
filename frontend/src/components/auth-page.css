@@ -1,0 +1,158 @@
+/* Auth Page Component Styles
+   Scope: .auth-page ...
+   Includes duplicated custom utility classes actually used by the AuthPage so that
+   the page can be more self‑contained. Tailwind utility classes remain untouched.
+*/
+
+/* Scoped CSS variable set (light theme) */
+.auth-page {
+  --background: #ffffff;
+  --foreground: #1f2937;
+  --card: rgba(255, 255, 255, 0.8);
+  --card-foreground: #374151;
+  --popover: rgba(255, 255, 255, 0.9);
+  --popover-foreground: #374151;
+  --primary: #164e63;
+  --primary-foreground: #ffffff;
+  --secondary: #475569;
+  --secondary-foreground: #ffffff;
+  --muted: #f0fdf4;
+  --muted-foreground: #374151;
+  --accent: #84cc16;
+  --accent-foreground: #1f2937;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #f9fafb;
+  --ring: rgba(130, 224, 255, 0.5);
+  --chart-1: #4f46e5;
+  --chart-2: #ec4899;
+  --chart-3: #fbbf24;
+  --chart-4: #22c55e;
+  --chart-5: #3b82f6;
+  --radius: 0.5rem;
+}
+.dark .auth-page {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: rgba(15, 23, 42, 0.8);
+  --card-foreground: #e2e8f0;
+  --popover: rgba(15, 23, 42, 0.9);
+  --popover-foreground: #e2e8f0;
+  --primary: #0ea5e9;
+  --primary-foreground: #0f172a;
+  --secondary: #334155;
+  --secondary-foreground: #f1f5f9;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #84cc16;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #334155;
+  --input: #1e293b;
+  --ring: rgba(14, 165, 233, 0.5);
+  --chart-1: #8b5cf6;
+  --chart-2: #06b6d4;
+  --chart-3: #f59e0b;
+  --chart-4: #10b981;
+  --chart-5: #3b82f6;
+}
+
+/* Glass effect (scoped) */
+.auth-page .ap-glass {
+  backdrop-filter: blur(16px) saturate(180%);
+  background-color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+.dark .auth-page .ap-glass {
+  background-color: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+
+/* Lift on hover */
+.auth-page .ap-hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.auth-page .ap-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+.dark .auth-page .ap-hover-lift:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Animations (names reused from global) */
+@keyframes ap-float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  25% {
+    transform: translateY(-10px) translateX(5px);
+  }
+  50% {
+    transform: translateY(-20px) translateX(0);
+  }
+  75% {
+    transform: translateY(-10px) translateX(-5px);
+  }
+}
+@keyframes ap-gradient {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+@keyframes ap-pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(132, 204, 22, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(132, 204, 22, 0.6);
+  }
+}
+@keyframes ap-slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-page .ap-animate-float {
+  animation: ap-float 6s ease-in-out infinite;
+}
+.auth-page .ap-animate-gradient {
+  animation: ap-gradient 15s ease infinite;
+}
+.auth-page .ap-animate-pulse-glow {
+  animation: ap-pulse-glow 2s ease-in-out infinite;
+}
+.auth-page .ap-animate-slide-in-up {
+  animation: ap-slide-in-up 0.6s ease-out;
+}
+
+/* Error message utility (used when error state) */
+.auth-page form .error {
+  color: var(--destructive);
+  font-size: 0.875rem;
+}
+
+/* Auth card optional extension */
+.auth-page .auth-card {
+  border: 2px solid rgba(var(--color-primary-rgb, 14, 165, 233), 0.2);
+}
+
+@media (max-width: 640px) {
+  .auth-page .auth-card {
+    padding: 1rem;
+  }
+}

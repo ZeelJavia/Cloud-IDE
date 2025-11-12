@@ -1,0 +1,710 @@
+.terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--primary-color);
+  border-top: 1px solid var(--border-color);
+  font-family: "Fira Code", "Monaco", "Menlo", monospace;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  background: var(--secondary-color);
+  border-bottom: 1px solid var(--border-color);
+  min-height: 32px;
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.terminal-tabs {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  height: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-right: 1px solid var(--border-color);
+  background: var(--tertiary-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 120px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.terminal-tab:hover {
+  background: var(--hover-color);
+  color: var(--text-primary);
+}
+
+.terminal-tab.active {
+  background: var(--primary-color);
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--accent-color);
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border-color);
+}
+
+.terminal-action {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.terminal-action:hover {
+  background: var(--hover-color);
+  color: var(--text-primary);
+}
+
+.terminal-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  padding: 4px 0;
+}
+
+.output-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 2px;
+  min-height: 18px;
+}
+
+.timestamp {
+  color: var(--text-secondary);
+  font-size: 11px;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.prompt {
+  color: var(--accent-color);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.content {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.output-line.command .content {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.output-line.output .content {
+  color: var(--text-primary);
+}
+
+.output-line.error .content {
+  color: var(--error-color);
+}
+
+.output-line.system .content {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.output-line.executing {
+  color: var(--accent-color);
+  align-items: center;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.loading-dots span {
+  width: 4px;
+  height: 4px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  animation: pulse 1.4s infinite;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.terminal-input-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  padding: 0;
+}
+
+.terminal-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.terminal-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty state */
+.terminal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.terminal-empty svg {
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.terminal-empty p {
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+/* Scrollbar styling */
+.terminal-output::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-output::-webkit-scrollbar-track {
+  background: var(--primary-color);
+}
+
+.terminal-output::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Terminal color themes */
+.terminal-output .ansi-black {
+  color: #1e1e1e;
+}
+
+.terminal-output .ansi-red {
+  color: #f44747;
+}
+
+.terminal-output .ansi-green {
+  color: #608b4e;
+}
+
+.terminal-output .ansi-yellow {
+  color: #dcdcaa;
+}
+
+.terminal-output .ansi-blue {
+  color: #569cd6;
+}
+
+.terminal-output .ansi-magenta {
+  color: #c586c0;
+}
+
+.terminal-output .ansi-cyan {
+  color: #4ec9b0;
+}
+
+.terminal-output .ansi-white {
+  color: #d4d4d4;
+}
+
+.terminal-output .ansi-bright-black {
+  color: #808080;
+}
+
+.terminal-output .ansi-bright-red {
+  color: #f48771;
+}
+
+.terminal-output .ansi-bright-green {
+  color: #90ee90;
+}
+
+.terminal-output .ansi-bright-yellow {
+  color: #f0e68c;
+}
+
+.terminal-output .ansi-bright-blue {
+  color: #87ceeb;
+}
+
+.terminal-output .ansi-bright-magenta {
+  color: #dda0dd;
+}
+
+.terminal-output .ansi-bright-cyan {
+  color: #afeeee;
+}
+
+.terminal-output .ansi-bright-white {
+  color: #ffffff;
+}
+
+/* Selection styling */
+.terminal-output ::selection {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.terminal-input::selection {
+  background: var(--accent-color);
+  color: white;
+}
+
+/* Terminal Input Container */
+.terminal-input-container {
+  position: relative;
+}
+
+/* Suggestions Dropdown */
+.terminal-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  margin-bottom: 8px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+  background: var(--accent-color);
+  color: white;
+}
+
+.suggestion-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.suggestion-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.suggestion-icon.execution {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.suggestion-icon.command {
+  background: rgba(33, 150, 243, 0.2);
+  color: #2196f3;
+}
+
+.suggestion-icon.navigation {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+
+.suggestion-text {
+  font-family: "Fira Code", monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.suggestion-description {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 12px;
+}
+
+.suggestion-help {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Enhanced Input Line */
+.input-container {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.input-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid transparent;
+  border-top: 2px solid var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Enhanced Output Styling */
+.output-line.system .content {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.output-line.system .content::before {
+  content: "→ ";
+  color: var(--accent-color);
+  font-weight: bold;
+}
+
+.output-line.command .content::before {
+  content: "$ ";
+  color: var(--accent-color);
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.output-line.execution .content {
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.output-line.execution .content::before {
+  content: "🚀 ";
+  margin-right: 4px;
+}
+
+/* Animation for new output lines */
+.output-line {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Terminal Actions Enhancement */
+.terminal-action.active {
+  background: var(--accent-color);
+  color: white;
+}
+
+.terminal-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Enhanced Terminal Tabs */
+.terminal-tab {
+  position: relative;
+}
+
+.terminal-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-color), #66b3ff);
+}
+
+/* Real Terminal Feel */
+.terminal-content {
+  background: #0c0c0c;
+  color: #cccccc;
+}
+
+.terminal-input {
+  caret-color: var(--accent-color);
+}
+
+.terminal-input::placeholder {
+  color: rgba(204, 204, 204, 0.4);
+  font-style: italic;
+}
+
+/* Command Type Indicators */
+.output-line.file-execution .content {
+  color: #ffb347;
+}
+
+.output-line.file-execution .content::before {
+  content: "⚡ ";
+  color: #ffb347;
+}
+
+/* Success/Error States */
+.output-line.success .content {
+  color: #4caf50;
+}
+
+.output-line.warning .content {
+  color: #ff9800;
+}
+
+/* Interactive Features */
+.terminal-suggestions::-webkit-scrollbar {
+  width: 4px;
+}
+
+.terminal-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-suggestions::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+/* Focus Enhancement */
+.terminal-input:focus {
+  box-shadow: 0 -2px 0 var(--accent-color);
+  outline: none;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .terminal-suggestions {
+    max-height: 150px;
+  }
+
+  .suggestion-item {
+    padding: 10px 12px;
+  }
+
+  .suggestion-description {
+    display: none;
+  }
+
+  .terminal-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .terminal-header {
+    min-height: 28px;
+  }
+
+  .terminal-title {
+    font-size: 12px;
+    padding: 0 8px;
+  }
+
+  .terminal-tab {
+    min-width: 100px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .terminal-content {
+    padding: 6px;
+  }
+
+  .terminal-output {
+    font-size: 12px;
+  }
+
+  .terminal-input {
+    font-size: 12px;
+  }
+
+  .timestamp {
+    font-size: 10px;
+    min-width: 50px;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .terminal {
+    border-top: 2px solid var(--border-color);
+  }
+
+  .terminal-tab.active {
+    border-bottom: 3px solid var(--accent-color);
+  }
+
+  .output-line.error .content {
+    background: rgba(244, 67, 54, 0.1);
+    padding: 2px 4px;
+    border-radius: 2px;
+  }
+}
+
+/* Focus styles for accessibility */
+.terminal-tab:focus,
+.terminal-action:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.terminal-input:focus {
+  box-shadow: 0 -2px 0 var(--accent-color);
+}
+
+/* Print styles */
+@media print {
+  .terminal {
+    display: none;
+  }
+}
+
+/* Copy selection styling */
+.terminal-output .selected {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Link styling in terminal output */
+.terminal-output .link {
+  color: var(--accent-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.terminal-output .link:hover {
+  color: #66b3ff;
+}
