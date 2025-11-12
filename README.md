@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+
 # 🐳 DevDock - Cloud IDE Platform
 
 <div align="center">
@@ -7,7 +9,7 @@
 ![Docker](https://img.shields.io/badge/Docker-required-blue.svg)
 ![MongoDB](https://img.shields.io/badge/MongoDB-6.x-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-![GitHub stars](https://img.shields.io/github/stars/ZeelJavia/Codespace-Frontend?style=social)
+![GitHub stars](https://img.shields.io/github/stars/ZeelJavia/Cloud-IDE?style=social)
 
 **A modern, containerized web IDE platform with real-time collaboration, AI assistance, and multi-language support.**
 
