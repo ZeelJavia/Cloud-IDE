@@ -14,6 +14,9 @@ import { VscNewFile, VscNewFolder } from "react-icons/vsc";
 import { api } from "../lib/api";
 import "./FileExplorer.css";
 
+/**
+ * FileExplorer - Project file tree with create, delete, and navigation functionality
+ */
 const FileExplorer = ({
   project,
   socket,

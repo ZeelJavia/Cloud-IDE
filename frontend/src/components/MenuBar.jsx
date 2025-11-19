@@ -12,6 +12,7 @@ import {
   FiUser,
   FiLogOut,
   FiHome,
+  FiClock,
 } from "react-icons/fi";
 import { VscTerminal, VscCopilot } from "react-icons/vsc";
 import { api } from "../lib/api";
@@ -34,6 +35,20 @@ const MenuBar = ({
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  }));
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCreateProject = () => {
     if (newProjectName.trim()) {
@@ -127,14 +142,6 @@ const MenuBar = ({
             )}
           </div>
 
-          <div className="menu-item">
-            <span>Edit</span>
-          </div>
-
-          <div className="menu-item">
-            <span>View</span>
-          </div>
-
           <div className="menu-item" onClick={onToggleTerminal}>
             <VscTerminal size={16} />
             <span>Terminal</span>
@@ -155,16 +162,9 @@ const MenuBar = ({
         </div>
 
         <div className="menu-right">
-          <div
-            className="menu-item"
-            onClick={checkTools}
-            title="Check language tools"
-          >
-            <FiSettings size={16} />
-          </div>
-
-          <div className="menu-item">
-            <FiHelpCircle size={16} />
+          <div className="menu-item time-display">
+            <FiClock size={16} />
+            <span>{currentTime}</span>
           </div>
 
           {/* User Menu */}

@@ -4,11 +4,17 @@ const config = require("../config");
 const { getModels } = require("../config/database");
 const { getFileLanguage } = require("../utils/fileUtils");
 
+/**
+ * FileService - Handles file operations and database storage for projects
+ */
 class FileService {
   constructor() {
     this.PROJECTS_DIR = config.getProjectsDir();
   }
 
+  /**
+   * Retrieve file content from database or filesystem storage
+   */
   async getFileContent(projectName, filePath, userId) {
     const { ProjectModel, FileModel } = getModels();
 
@@ -50,6 +56,9 @@ class FileService {
     throw new Error("File not found");
   }
 
+  /**
+   * Save file content to database and trigger fresh container creation
+   */
   async saveFileContent(projectName, filePath, content, userId, io) {
     const { ProjectModel, FileModel } = getModels();
 
@@ -90,14 +99,29 @@ class FileService {
         filePath,
         content,
       });
-      // Also sync into running container ephemeral volume if present
+      // Start fresh container with updated files (simple approach)
       try {
         const ContainerService = require("./containerService");
         const containerService = new ContainerService();
-        if (typeof containerService.syncFile === "function") {
-          await containerService.syncFile(projectName, filePath);
+        if (
+          typeof containerService.startFreshContainerForProject === "function"
+        ) {
+          console.log(
+            `🚀 Starting fresh container with updated files for ${projectName}...`
+          );
+          await containerService.startFreshContainerForProject(
+            projectName,
+            userId
+          );
+          console.log(`✅ Fresh container started with updated ${filePath}!`);
+        } else {
+          console.log(`⚠️  Fresh container method not available`);
         }
-      } catch {}
+      } catch (containerError) {
+        console.error(
+          `❌ Fresh container start failed: ${containerError.message}`
+        );
+      }
       return { success: true, message: "File saved" };
     }
 

@@ -27,7 +27,7 @@
     "socket.io": "^4.7.2"
   },
   "devDependencies": {
-    "node-fetch": "^3.3.2",
+    "node-fetch": "^2.7.0",
     "nodemon": "^3.0.1"
   },
   "keywords": [

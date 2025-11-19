@@ -41,6 +41,16 @@
   background: var(--hover-color);
 }
 
+.menu-item.time-display {
+  color: var(--text-secondary);
+  cursor: default;
+  pointer-events: none;
+}
+
+.menu-item.time-display:hover {
+  background: transparent;
+}
+
 .menu-item span {
   font-size: 13px;
   color: var(--text-primary);

@@ -36,37 +36,37 @@ export function LandingPage({ onGetStarted, onLogin }) {
       icon: <Code2 className="w-8 h-8" />,
       title: "Full IDE Experience",
       description:
-        "Complete development environment with syntax highlighting, IntelliSense, and debugging capabilities.",
+        "Complete development environment with syntax highlighting, auto-completion, and intelligent code editing for 10+ languages.",
     },
     {
       icon: <Layers className="w-8 h-8" />,
       title: "Docker Integration",
       description:
-        "Secure, containerized code execution with support for 10+ programming languages.",
+        "Secure, containerized execution with real-time file updates. Support for C/C++, Java, Python, Node.js and more.",
     },
     {
       icon: <Sparkles className="w-8 h-8" />,
       title: "AI Assistant",
       description:
-        "Get code suggestions, generate boilerplate, and solve problems with our intelligent AI companion.",
+        "Integrated AI-powered code suggestions, debugging help, and instant problem-solving assistance.",
     },
     {
       icon: <Terminal className="w-8 h-8" />,
       title: "Real-time Terminal",
       description:
-        "Integrated terminal with full shell access and real-time command execution.",
+        "Integrated terminal with full shell access, live command execution, and container management.",
     },
     {
-      icon: <Users className="w-8 h-8" />,
-      title: "Live Collaboration",
+      icon: <Globe className="w-8 h-8" />,
+      title: "Web Preview & Serving",
       description:
-        "Work together in real-time with instant file synchronization and shared workspaces.",
+        "Instant web preview with automatic port allocation, nginx serving, and live reload for web development projects.",
     },
     {
       icon: <Shield className="w-8 h-8" />,
       title: "Secure & Isolated",
       description:
-        "Your code runs in secure containers with proper isolation and safety measures.",
+        "Every project runs in isolated Docker containers with automatic cleanup and secure file handling.",
     },
   ];
 
@@ -105,7 +105,7 @@ export function LandingPage({ onGetStarted, onLogin }) {
           {codeSnippets.map((snippet, index) => (
             <div
               key={index}
-              className="absolute text-muted-foreground/20 font-mono text-sm lp-animate-float opacity-30"
+              className="absolute text-muted-foreground/10 font-mono text-sm lp-animate-float opacity-15"
               style={{
                 top: `${20 + index * 15}%`,
                 left: `${10 + index * 12}%`,
@@ -148,8 +148,8 @@ export function LandingPage({ onGetStarted, onLogin }) {
               { icon: <Sparkles className="w-4 h-4" />, text: "AI-Powered" },
               { icon: <Globe className="w-4 h-4" />, text: "Browser-Based" },
               {
-                icon: <GitBranch className="w-4 h-4" />,
-                text: "Real-time Collaboration",
+                icon: <Globe className="w-4 h-4" />,
+                text: "Live Web Preview",
               },
             ].map((feature, index) => (
               <div

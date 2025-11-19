@@ -7,11 +7,13 @@ import FileExplorer from "./components/FileExplorer";
 import CodeEditor from "./components/CodeEditor";
 import AIPanel from "./components/AIPanel";
 import Terminal from "./components/Terminal";
-import StatusBar from "./components/StatusBar";
 import { LandingPage } from "./components/landing-page";
 import { AuthPage } from "./components/auth-page";
 import "./App.css";
 
+/**
+ * Main App component - Orchestrates IDE interface, projects, and real-time communication
+ */
 const App = () => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -251,6 +253,9 @@ const App = () => {
 
   const [treeRefreshTick, setTreeRefreshTick] = useState(0);
 
+  /**
+   * Create new project in database and update projects list
+   */
   const createProject = async (projectName) => {
     try {
       setLoading(true);
@@ -296,6 +301,9 @@ const App = () => {
     setFileContents({});
   };
 
+  /**
+   * Load and display selected file in editor with content fetching
+   */
   const openFile = async (filePath) => {
     try {
       if (!currentProject) {
@@ -355,6 +363,9 @@ const App = () => {
     });
   };
 
+  /**
+   * Save file content to database and update UI state
+   */
   const saveFile = async (filePath, content) => {
     try {
       if (!currentProject) {
@@ -776,13 +787,6 @@ const App = () => {
           </div>
         )}
       </div>
-
-      <StatusBar
-        currentProject={currentProject}
-        activeFile={activeFile}
-        connected={connected}
-        openFilesCount={openFiles.length}
-      />
     </div>
   );
 };

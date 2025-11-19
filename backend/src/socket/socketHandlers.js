@@ -44,7 +44,16 @@ const socketHandlers = (io) => {
       const { terminalId, projectName } = payload;
       const userId = (socket.user && socket.user.id) || payload?.userId;
 
+      console.log(`\n🔌 [SOCKET] Container terminal initialization requested`);
+      console.log(`   📋 Client info: socket=${socket.id}`);
+      console.log(
+        `   📋 Request: terminalId=${terminalId}, projectName=${projectName}, userId=${userId}`
+      );
+
       if (!terminalId || !projectName || !userId) {
+        console.error(
+          `   ❌ Missing required parameters for terminal initialization`
+        );
         socket.emit("terminal-output", {
           terminalId,
           output: "Error: terminalId, projectName, and userId are required\n",
@@ -54,6 +63,7 @@ const socketHandlers = (io) => {
       }
 
       try {
+        console.log(`   🚀 Starting container service initialization...`);
         socket.emit("terminal-output", {
           terminalId,
           output: `🐳 Initializing containerized environment for project: ${projectName}\n`,
@@ -65,18 +75,73 @@ const socketHandlers = (io) => {
           userId
         );
 
+        console.log(`   ✅ Container initialization completed successfully`);
+        console.log(`   📊 Container info:`, containerInfo);
+
         socket.emit("terminal-output", {
           terminalId,
           output: `✅ Container ready (${containerInfo.projectType})\n`,
         });
 
-        // Announce fixed web serving port instead of random mapped dev port
-        socket.emit("terminal-output", {
-          terminalId,
-          output: `🌐 Web projects are served at: http://localhost:${
-            config.WEB_PORT || 8088
-          } (start with: serve)\n`,
-        });
+        // Check if this is a web project and auto-start web server
+        const session = containerTerminal.getSession(terminalId);
+        if (session && session.projectPath) {
+          const fs = require("fs");
+          const path = require("path");
+
+          // Check for web files (HTML, CSS, JS)
+          const webFiles = ["index.html", "index.htm", "main.html", "app.html"];
+          const hasWebFiles = webFiles.some((file) =>
+            fs.existsSync(path.join(session.projectPath, file))
+          );
+
+          if (hasWebFiles) {
+            console.log(
+              `   🌐 Web project detected - auto-starting web server...`
+            );
+
+            // Auto-start web server for web projects
+            try {
+              const webResult = await containerTerminal.startWebServer(
+                terminalId
+              );
+
+              if (webResult.code === 0) {
+                socket.emit("terminal-output", {
+                  terminalId,
+                  output: `🌍 Web server auto-started at: ${webResult.url}\n`,
+                });
+
+                socket.emit("web-project-ready", {
+                  terminalId,
+                  url: webResult.url,
+                  autoStarted: true,
+                });
+              } else {
+                socket.emit("terminal-output", {
+                  terminalId,
+                  output: `⚠️  Web server auto-start failed: ${webResult.error}\n`,
+                  error: true,
+                });
+              }
+            } catch (webError) {
+              socket.emit("terminal-output", {
+                terminalId,
+                output: `⚠️  Web server auto-start error: ${webError.message}\n`,
+                error: true,
+              });
+            }
+          } else {
+            // Announce manual web serving option for non-web projects
+            const session = containerTerminal.getSession(terminalId);
+            const availablePort =
+              session?.mappedPort || config.WEB_PORT || 8088;
+            socket.emit("terminal-output", {
+              terminalId,
+              output: `🌐 Web projects are served at: http://localhost:${availablePort} (start with: serve)\n`,
+            });
+          }
+        }
 
         socket.emit("terminal-output", {
           terminalId,
@@ -91,7 +156,10 @@ const socketHandlers = (io) => {
             url: containerTerminal.getContainerUrl(containerInfo),
           },
         });
+
+        console.log(`   📡 Emitted container-ready event to client`);
       } catch (error) {
+        console.error(`   ❌ Container initialization failed:`, error);
         socket.emit("terminal-output", {
           terminalId,
           output: `❌ Failed to initialize container: ${error.message}\n`,
@@ -105,7 +173,18 @@ const socketHandlers = (io) => {
       const { terminalId, command, workingDirectory } = payload;
       const userId = (socket.user && socket.user.id) || payload?.userId;
 
-      if (!terminalId || !command) return;
+      console.log(`\n⚡ [SOCKET] Container command execution requested`);
+      console.log(`   📋 Client: socket=${socket.id}, userId=${userId}`);
+      console.log(
+        `   📋 Request: terminalId=${terminalId}, command='${command}', workingDir=${workingDirectory}`
+      );
+
+      if (!terminalId || !command) {
+        console.error(
+          `   ❌ Missing required parameters for command execution`
+        );
+        return;
+      }
 
       console.log(`[DEBUG] execute-container-command received:`, {
         terminalId,
@@ -115,6 +194,7 @@ const socketHandlers = (io) => {
 
       try {
         let childProcess = null;
+        console.log(`   🚀 Delegating to container service...`);
 
         const result = await containerTerminal.executeCommand(
           terminalId,
@@ -122,9 +202,15 @@ const socketHandlers = (io) => {
           {
             workingDirectory: workingDirectory || "/workspace",
             onStdout: (data) => {
+              console.log(
+                `   📤 [${terminalId}] stdout chunk: ${data.length} bytes`
+              );
               socket.emit("terminal-output", { terminalId, output: data });
             },
             onStderr: (data) => {
+              console.log(
+                `   📤 [${terminalId}] stderr chunk: ${data.length} bytes`
+              );
               socket.emit("terminal-output", {
                 terminalId,
                 output: data,
@@ -134,11 +220,18 @@ const socketHandlers = (io) => {
             onProcess: (child) => {
               childProcess = child;
               activeRuns.set(terminalId, { mode: "container", child });
+              console.log(
+                `   🔗 Child process registered for terminal ${terminalId}`
+              );
             },
           }
         );
 
         activeRuns.delete(terminalId);
+        console.log(`   ✅ Command execution completed`);
+        console.log(
+          `   📊 Result: exitCode=${result.code}, workingDir=${result.workingDirectory}`
+        );
 
         // Update terminal working directory if it changed
         if (result.workingDirectory) {
@@ -154,6 +247,7 @@ const socketHandlers = (io) => {
           workingDirectory: result.workingDirectory,
         });
       } catch (error) {
+        console.error(`   ❌ Container command execution failed:`, error);
         activeRuns.delete(terminalId);
         socket.emit("terminal-output", {
           terminalId,
@@ -166,12 +260,32 @@ const socketHandlers = (io) => {
 
     // Start web server in container
     socket.on("start-web-server", async (data) => {
-      const { terminalId, port = 8088, workingDirectory } = data || {};
+      const {
+        terminalId: rawTerminalId,
+        port = 8088,
+        workingDirectory,
+      } = data || {};
 
-      if (!terminalId) return;
+      // Extract the actual ID if terminalId is an object
+      const terminalId =
+        typeof rawTerminalId === "object" && rawTerminalId?.id
+          ? rawTerminalId.id
+          : rawTerminalId;
+
+      console.log(`\n🌐 [SOCKET] Web server start requested`);
+      console.log(`   📋 Client: socket=${socket.id}`);
+      console.log(
+        `   📋 Request: terminalId=${terminalId}, port=${port}, workingDir=${workingDirectory}`
+      );
+
+      if (!terminalId) {
+        console.error(`   ❌ Missing terminalId for web server start`);
+        return;
+      }
 
       console.log(`[DEBUG] start-web-server received:`, {
         terminalId,
+        rawTerminalId,
         port,
         workingDirectory,
       });
@@ -179,6 +293,7 @@ const socketHandlers = (io) => {
       try {
         // Update terminal working directory if provided
         if (workingDirectory) {
+          console.log(`   📁 Updating working directory: ${workingDirectory}`);
           containerTerminal.updateTerminalWorkingDirectory(
             terminalId,
             workingDirectory
@@ -186,15 +301,28 @@ const socketHandlers = (io) => {
         }
 
         let childProcess = null;
+        console.log(`   🚀 Starting web server via container service...`);
 
         const result = await containerTerminal.startWebServer(
           terminalId,
           port,
           {
             onStdout: (data) => {
+              console.log(
+                `   📤 [${terminalId}] nginx stdout: ${data.replace(
+                  /\n/g,
+                  "\\n"
+                )}`
+              );
               socket.emit("terminal-output", { terminalId, output: data });
             },
             onStderr: (data) => {
+              console.log(
+                `   📤 [${terminalId}] nginx stderr: ${data.replace(
+                  /\n/g,
+                  "\\n"
+                )}`
+              );
               socket.emit("terminal-output", {
                 terminalId,
                 output: data,
@@ -204,8 +332,15 @@ const socketHandlers = (io) => {
             onProcess: (child) => {
               childProcess = child;
               activeRuns.set(terminalId, { mode: "container-web", child });
+              console.log(
+                `   🔗 Web server process registered for terminal ${terminalId}`
+              );
             },
           }
+        );
+
+        console.log(
+          `   📊 Web server start result: code=${result.code}, port=${result.webPort}`
         );
 
         // Don't delete activeRuns for web servers as they should keep running
@@ -214,38 +349,50 @@ const socketHandlers = (io) => {
         // Set current project for root-level web serving and announce container-mapped URL
         try {
           const sess = containerTerminal.getSession(terminalId);
-          if (sess?.projectName) setCurrentProject(sess.projectName);
+          if (sess?.projectName) {
+            console.log(
+              `   🌐 Setting current project for web serving: ${sess.projectName}`
+            );
+            setCurrentProject(sess.projectName);
+          }
           if (result.code === 0) {
             const info = containerTerminal.getWebInfo(terminalId);
             const url = info?.webPort
               ? `http://localhost:${info.webPort}`
               : null;
-            if (url) socket.emit("web-project-ready", { terminalId, url });
-            // Also print to the terminal explicitly at fixed port
-            socket.emit("terminal-output", {
-              terminalId,
-              output: `🌐 Web server available at: http://localhost:${
-                config.WEB_PORT || 8088
-              }\n`,
-            });
+            if (url) {
+              console.log(`   ✅ Web project ready at: ${url}`);
+              socket.emit("web-project-ready", { terminalId, url });
+              // Also print to the terminal with dynamic port
+              const actualPort = info?.webPort || url.split(":")[2];
+              socket.emit("terminal-output", {
+                terminalId,
+                output: `🌐 Web server available at: ${url}\n`,
+              });
+            }
           } else {
-            // Do not emit fallback URL; enforce fixed port policy
+            console.error(
+              `   ❌ Web server failed to start (exit code: ${result.code})`
+            );
+            // Get the intended port from session or use default
+            const sess = containerTerminal.getSession(terminalId);
+            const intendedPort = sess?.mappedPort || port || 8088;
             socket.emit("terminal-output", {
               terminalId,
-              output:
-                "Web server failed to start on fixed port. Ensure port is free (" +
-                (config.WEB_PORT || 8088) +
-                ") and try again.\n",
+              output: `Web server failed to start on port ${intendedPort}. Ensure port is free and try again.\n`,
               error: true,
             });
           }
-        } catch {}
+        } catch (e) {
+          console.error(`   ⚠️ Post-startup operations warning: ${e.message}`);
+        }
 
         socket.emit("command-completed", {
           terminalId,
           exitCode: result.code,
         });
       } catch (error) {
+        console.error(`   ❌ Web server start failed:`, error);
         activeRuns.delete(terminalId);
         socket.emit("terminal-output", {
           terminalId,
@@ -528,40 +675,64 @@ const socketHandlers = (io) => {
       }
     });
 
-    // Handle socket disconnect - cleanup containers and terminal sessions
+    // Handle socket disconnect - minimal cleanup (containers persist)
     socket.on("disconnect", async (reason) => {
       console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
 
+      // Don't automatically destroy containers on disconnect
+      // Containers should persist through page refreshes and temporary disconnections
+      // Only cleanup on explicit project close or session timeout
+      console.log(
+        "🔄 Socket disconnected - containers remain active for reconnection"
+      );
+    });
+
+    // Explicit project close - cleanup specific session
+    socket.on("close-project", async (data) => {
+      const { terminalId, projectName, userId } = data || {};
+
+      console.log(`🚪 Project close requested:`, data);
+
       try {
-        // Get user's terminal sessions and containers
-        const userId = socket.user?.id; // Get userId from authenticated socket
-
-        if (userId) {
-          // Stop all terminal sessions for this user
-          const userTerminals =
+        if (terminalId) {
+          // Direct terminal cleanup
+          await containerTerminal.cleanupSession(terminalId);
+          socket.emit("project-closed", { terminalId, success: true });
+          console.log(`✅ Project session ${terminalId} closed successfully`);
+        } else if (projectName && userId) {
+          // Find all sessions for this project and user
+          const userSessions =
             containerTerminal.getUserTerminalSessions(userId);
-          console.log(
-            `Cleaning up ${userTerminals.length} terminal sessions for user ${userId}`
-          );
+          let cleanedUp = 0;
 
-          for (const terminalId of userTerminals) {
-            await containerTerminal.stopTerminalSession(terminalId);
+          for (const sessionTerminalId of userSessions) {
+            const session = containerTerminal.getSession(sessionTerminalId);
+            if (session && session.projectName === projectName) {
+              await containerTerminal.cleanupSession(sessionTerminalId);
+              cleanedUp++;
+            }
           }
 
-          // Stop all containers for this user
-          const userContainers = containerTerminal.getUserContainers(userId);
+          socket.emit("project-closed", {
+            projectName,
+            cleanedUp,
+            success: true,
+          });
           console.log(
-            `Cleaning up ${userContainers.length} containers for user ${userId}`
+            `✅ Project ${projectName} closed - cleaned up ${cleanedUp} sessions`
           );
-
-          for (const container of userContainers) {
-            await containerTerminal.stopContainer(container.containerId);
-          }
-
-          console.log(`Cleanup completed for user ${userId}`);
+        } else {
+          console.error(
+            "❌ Invalid project close request - missing terminalId or projectName+userId"
+          );
+          socket.emit("project-closed", {
+            success: false,
+            error: "Missing required parameters",
+          });
         }
       } catch (error) {
-        console.error("Error during socket disconnect cleanup:", error);
+        console.error(`❌ Error closing project:`, error);
+        socket.emit("project-closed", { success: false, error: error.message });
       }
     });
 

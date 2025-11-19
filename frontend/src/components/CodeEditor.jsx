@@ -12,6 +12,9 @@ import { api } from "../lib/api";
 import RunConfigModal from "./RunConfigModal";
 import "./CodeEditor.css";
 
+/**
+ * CodeEditor - Monaco-based code editor with syntax highlighting and file management
+ */
 const CodeEditor = ({
   files,
   activeFile,
@@ -48,6 +51,9 @@ const CodeEditor = ({
     }
   }, [activeFile, fileContents]);
 
+  /**
+   * Configure Monaco editor theme, shortcuts and language features
+   */
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
 
@@ -172,6 +178,9 @@ const CodeEditor = ({
     }
   };
 
+  /**
+   * Execute file in Docker container with streaming output to terminal
+   */
   const handleRun = async (config = runConfig) => {
     if (!activeFile) return;
     try {
@@ -285,8 +294,8 @@ const CodeEditor = ({
                 <span>AI-powered code completion</span>
               </div>
               <div className="feature">
-                <span className="feature-icon">🔧</span>
-                <span>Real-time collaboration</span>
+                <span className="feature-icon">🐳</span>
+                <span>Containerized execution environment</span>
               </div>
               <div className="feature">
                 <span className="feature-icon">🎨</span>
@@ -425,16 +434,7 @@ const CodeEditor = ({
         )}
       </div>
 
-      {activeFile && (
-        <div className="editor-status">
-          <span className="file-info">
-            {activeFile.name} • {getLanguageFromFileName(activeFile.name)}
-          </span>
-          {hasUnsavedChanges && (
-            <span className="unsaved-status">• Unsaved changes</span>
-          )}
-        </div>
-      )}
+
 
       <RunConfigModal
         isOpen={showRunConfig}

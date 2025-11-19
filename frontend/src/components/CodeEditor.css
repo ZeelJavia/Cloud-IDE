@@ -121,6 +121,22 @@
   cursor: not-allowed;
 }
 
+.editor-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: "Fira Code", monospace;
+  border-left: 1px solid var(--border-color);
+  margin-left: 4px;
+}
+
+.editor-time:hover {
+  color: var(--text-primary);
+}
+
 .editor-container {
   flex: 1;
   position: relative;

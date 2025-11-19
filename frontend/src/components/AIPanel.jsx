@@ -10,18 +10,7 @@ import {
   FiCheck,
 } from "react-icons/fi";
 import {
-  VscCommentDiscussion,
-  VscCode,
-  VscSend,
-  VscClose,
-  VscCircleFilled,
   VscCopilot,
-  VscSparkle,
-  VscLightbulb,
-  VscClearAll,
-  VscCheck,
-  VscEdit,
-  VscLoading,
 } from "react-icons/vsc";
 import { api } from "../lib/api";
 import "./AIPanel.css";

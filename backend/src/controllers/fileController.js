@@ -1,4 +1,6 @@
-const fileService = require("../services/fileService");
+/**
+ * File Controller - Manages file operations, content serving, and tree structure
+ */
 
 class FileController {
   async getFileContent(req, res) {

@@ -9,14 +9,20 @@ const { dockerImageExists, dockerPullImage } = require("../utils/dockerUtils");
 const { getModels } = require("../config/database");
 
 /**
- * Container Service
- * Provides containerized terminal functionality with Docker integration
+ * Simple Container Service for Temporary Workflow
+ * - User selects project -> creates temporary container
+ * - Files served temporarily from host directory
+ * - Web projects get nginx on port 8088
+ * - Container destroys when done (no persistence)
+ */
+/**
+ * ContainerService - Manages Docker containers for project execution
+ * Handles container lifecycle, web serving, and file synchronization
  */
 class ContainerService {
   constructor() {
     this.activeContainers = new Map(); // containerId -> containerInfo
     this.activeSessions = new Map(); // terminalId -> sessionInfo
-    // Track per-terminal real containers
     this.windowsShell = this.detectWindowsShell();
   }
 
@@ -46,375 +52,777 @@ class ContainerService {
         );
         candidates.push(path.join(systemRoot, "System32", "cmd.exe"));
       }
-      // Typical PowerShell 7 location (MSI)
       candidates.push(
         path.join("C:", "Program Files", "PowerShell", "7", "pwsh.exe")
       );
-      // Fallback to PATH provided shells
-      candidates.push("powershell.exe");
-      candidates.push("pwsh.exe");
-      candidates.push(process.env.ComSpec || "cmd.exe");
-
-      const fs = require("fs");
-      for (const c of candidates) {
-        try {
-          if (c.includes(".exe") && fs.existsSync(c)) return c;
-        } catch {}
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
       }
-      return process.env.ComSpec || "cmd.exe";
-    } catch {
-      return process.env.ComSpec || "cmd.exe";
+      return "cmd.exe";
+    } catch (error) {
+      return "cmd.exe";
     }
   }
 
   /**
-   * Initialize terminal session for a project
+   * Ensure database is ready for use
    */
-  async initializeTerminalSession(terminalId, projectName, userId) {
-    console.log(
-      `🐳 Initializing container terminal for project: ${projectName}`
-    );
-    // Ensure docker is available
-    const hasDocker = await spawnWait("docker", ["--version"]);
-    if (hasDocker.code !== 0) {
-      throw new Error("Docker not available on host");
+  async ensureDatabaseReady() {
+    if (!config.USE_DB_PROJECTS_BOOL) {
+      return false; // Database not needed
     }
 
-    // Choose base image (Linux) for terminal sessions
-    const baseImage = process.env.DOCKER_BASE_IMAGE || "ubuntu:22.04";
-    const imgPresent = await dockerImageExists(baseImage);
-    if (!imgPresent) {
-      const pullCode = await dockerPullImage(baseImage);
-      if (pullCode !== 0) {
-        throw new Error(`Failed to pull base image ${baseImage}`);
-      }
+    const { ProjectModel, FileModel } = getModels();
+    if (ProjectModel && FileModel) {
+      return true; // Database is ready
     }
 
-    let projectHostDir = path.join(config.getProjectsDir(), projectName);
-    let useVolume = false;
-    let projectVolumeName = null;
+    // Wait a moment for database to initialize
+    console.log(`   ⏳ Waiting for database to initialize...`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // If we are in DB mode, materialize project files to ephemeral dir
-    let ephemeralDir = null;
+    const { ProjectModel: ProjectModel2, FileModel: FileModel2 } = getModels();
+    return !!(ProjectModel2 && FileModel2);
+  }
+
+  /**
+   * Initialize temporary container session
+   * Simple workflow: Load project -> Create temp directory -> Start container
+   */
+  /**
+   * Initialize temporary container session - Load project files and create isolated container
+   */
+  async initializeTerminalSession(terminalId, projectName, ownerId) {
+    console.log(`🚀 Initializing temporary container session...`);
+    console.log(`   📋 Terminal ID: ${terminalId}`);
+    console.log(`   👤 Owner: ${ownerId}`);
+    console.log(`   📁 Project: ${projectName}`);
+
+    const projectPath = this.getProjectPath(projectName, ownerId);
+    let actualProjectPath = projectPath; // This will be updated if we use MongoDB
+    let tempDir = null;
+
     try {
-      const { ProjectModel, FileModel } = getModels();
-      if (config.USE_DB_PROJECTS_BOOL && ProjectModel && FileModel) {
-        const proj = await ProjectModel.findOne({
+      // Ensure database is ready if needed
+      const dbReady = await this.ensureDatabaseReady();
+
+      if (dbReady) {
+        const { ProjectModel, FileModel } = getModels();
+        console.log(`   🔍 Looking up project in database...`);
+
+        let dbProject = await ProjectModel.findOne({
           name: projectName,
-          owner: userId,
+          owner: ownerId,
         }).lean();
-        if (proj) {
-          const allFiles = await FileModel.find({ project: proj._id }).lean();
-          if (
-            config.IN_CONTAINER_DB_FETCH_BOOL &&
-            !config.MATERIALIZE_DB_TO_FS_BOOL
-          ) {
-            // Use a named docker volume; no local writes
-            projectVolumeName = this.makeVolumeName(
-              projectName,
-              userId,
-              terminalId
-            );
-            const v = await spawnWait("docker", [
-              "volume",
-              "create",
-              projectVolumeName,
-            ]);
-            if (v.code !== 0) {
-              throw new Error(`Failed to create volume: ${projectVolumeName}`);
-            }
-            useVolume = true;
-            // Defer actual file population until container is running
-            // We'll populate after container start via docker exec
-            sessionPendingFiles = allFiles; // temp var defined below
-          } else {
-            // Fallback: materialize to ephemeral dir on host
-            ephemeralDir = fs.mkdtempSync(
-              path.join(os.tmpdir(), `devdock-${projectName}-`)
-            );
-            for (const f of allFiles) {
-              const targetPath = path.join(ephemeralDir, f.path);
-              if (f.type === "folder") {
-                fs.mkdirSync(targetPath, { recursive: true });
-              } else {
-                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-                fs.writeFileSync(targetPath, f.content || "", "utf8");
-              }
-            }
-            projectHostDir = ephemeralDir;
-          }
-        } else {
-          console.log(
-            `DB mode enabled but project '${projectName}' not found in DB; using filesystem at ${projectHostDir}`
-          );
+
+        if (!dbProject) {
+          // Fallback to name-only search
+          dbProject = await ProjectModel.findOne({ name: projectName }).lean();
         }
+
+        if (dbProject) {
+          console.log(`   ✅ Project found in database (ID: ${dbProject._id})`);
+
+          // Create temporary directory for this session
+          tempDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), `devdock-${projectName}-`)
+          );
+          console.log(`   📂 Created temp directory: ${tempDir}`);
+
+          // Load all files from database
+          const allFiles = await FileModel.find({
+            project: dbProject._id,
+          }).lean();
+          console.log(
+            `   📄 Loading ${allFiles.length} files from database...`
+          );
+
+          // Materialize files to temp directory
+          let fileCount = 0;
+          let folderCount = 0;
+
+          for (const file of allFiles) {
+            const targetPath = path.join(tempDir, file.path);
+
+            if (file.type === "folder") {
+              fs.mkdirSync(targetPath, { recursive: true });
+              folderCount++;
+            } else {
+              fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+              fs.writeFileSync(targetPath, file.content || "", "utf8");
+              fileCount++;
+            }
+          }
+
+          console.log(
+            `   ✅ Materialized ${fileCount} files and ${folderCount} folders`
+          );
+
+          // Use temp directory as project path for container and web server
+          actualProjectPath = tempDir;
+          console.log(
+            `   📂 Using MongoDB temp directory: ${actualProjectPath}`
+          );
+        } else {
+          console.log(`   ⚠️  Project '${projectName}' not found in database`);
+          console.log(`   📁 Using filesystem path: ${actualProjectPath}`);
+          await this.ensureProjectExists(actualProjectPath);
+        }
+      } else {
+        console.log(`   📁 Using filesystem storage (database disabled)`);
+        await this.ensureProjectExists(actualProjectPath);
       }
-    } catch (e) {
-      console.warn(`DB materialization skipped: ${e.message}`);
+    } catch (error) {
+      console.error(`   ❌ Error loading project: ${error.message}`);
+      // Fallback to filesystem
+      await this.ensureProjectExists(actualProjectPath);
     }
 
-    // Allocate a host port for inside 8080
-    const mappedPort = await this.getFreePort();
+    // Get container image based on project files
+    const image = await this.getProjectImage(actualProjectPath);
+    console.log(`   🐳 Selected image: ${image}`);
 
-    const containerName = this.makeContainerName(
+    // Ensure image exists
+    if (!(await dockerImageExists(image))) {
+      console.log(`   ⬇️  Pulling image: ${image}`);
+      await dockerPullImage(image);
+    }
+
+    // Create container with cleanup and unique naming
+    const baseContainerId = this.makeContainerName(
       projectName,
-      userId,
+      ownerId,
       terminalId
     );
+    console.log(`   🏷️  Base container name: ${baseContainerId}`);
 
-    // Run long-lived container
-    const argsCreate = [
+    // Clean up any existing containers with the same name
+    await this.cleanupExistingContainer(baseContainerId);
+
+    // Ensure unique container name
+    const containerId = await this.ensureUniqueContainerName(baseContainerId);
+    console.log(`   🏷️  Final container name: ${containerId}`);
+
+    // Get free port for internal services
+    const mappedPort = await this.getFreePort();
+    console.log(`   🔌 Allocated port: ${mappedPort} -> 8080`);
+
+    // Start container with simple host directory mount
+    console.log(`   🐳 Starting container...`);
+    console.log(`      Host directory: ${actualProjectPath}`);
+    console.log(`      Container mount: /workspace`);
+
+    const dockerArgs = [
       "run",
       "-dit",
       "--name",
-      containerName,
-      ...(useVolume
-        ? ["-v", `${projectVolumeName}:/workspace`]
-        : ["-v", `${projectHostDir}:/workspace`]),
+      containerId,
+      "-v",
+      `${actualProjectPath}:/workspace`,
       "-w",
       "/workspace",
       "-p",
       `${mappedPort}:8080`,
-      baseImage,
+      image,
       "bash",
-      "-lc",
-      "sleep infinity",
     ];
 
-    const started = await spawnWait("docker", argsCreate);
-    if (started.code !== 0) {
+    console.log(`   💻 Docker command: docker ${dockerArgs.join(" ")}`);
+    const result = await spawnWait("docker", dockerArgs);
+
+    if (result.code !== 0) {
+      console.error(`   ❌ Container creation failed!`);
+      console.error(`      Error: ${result.stderr || result.stdout}`);
+
+      // Clean up temp directory if created
+      if (tempDir && fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+
       throw new Error(
-        started.stderr || started.stdout || "Failed to start container"
+        `Container creation failed: ${result.stderr || result.stdout}`
       );
     }
 
+    console.log(`   ✅ Container started successfully!`);
+
+    // Store session information
     const sessionInfo = {
       terminalId,
+      ownerId,
       projectName,
-      userId,
-      workingDirectory: "/workspace",
-      projectHostDir: useVolume ? null : projectHostDir,
-      projectVolumeName: useVolume ? projectVolumeName : null,
-      projectType: "linux",
-      containerId: containerName,
+      projectPath: actualProjectPath, // Use the actual path (temp dir for MongoDB projects)
+      tempDir, // Track temp directory for cleanup
+      imageName: image,
+      containerId,
       mappedPort,
-      baseImage,
-      initialized: true,
-      ephemeralDir,
+      projectType: image, // For compatibility with socket handlers
+      workingDirectory: "/workspace", // Default working directory
+      created: new Date(),
     };
 
     this.activeSessions.set(terminalId, sessionInfo);
+    this.activeContainers.set(containerId, sessionInfo);
 
-    // Optional: mirror DB-backed project files to backend/projects if enabled
-    try {
-      if (config.MATERIALIZE_DB_TO_FS_BOOL) {
-        await this.syncProjectFiles(projectName, userId);
-      }
-    } catch (e) {
-      console.warn(`Project sync warning: ${e.message}`);
-    }
-
-    // Populate files directly inside container volume when enabled
-    try {
-      if (useVolume) {
-        const { ProjectModel, FileModel } = getModels();
-        const proj = await ProjectModel.findOne({
-          name: projectName,
-          owner: userId,
-        }).lean();
-        if (proj) {
-          const allFiles = await FileModel.find({ project: proj._id }).lean();
-          await this.populateFilesInContainer(containerName, allFiles);
-        }
-      }
-    } catch (e) {
-      console.warn(`In-container population warning: ${e.message}`);
-    }
-
-    return {
-      projectType: sessionInfo.projectType,
-      mappedPort: sessionInfo.mappedPort,
-      containerId: sessionInfo.containerId,
-      initialized: true,
-    };
+    console.log(`   📊 Session registered in memory`);
+    return sessionInfo;
   }
 
   /**
-   * Execute command in terminal session
+   * Start web server for project (simple nginx on port 8088)
    */
-  async executeCommand(terminalId, command, options = {}) {
-    const session = this.activeSessions.get(terminalId);
+  /**
+   * Start nginx web server for project with fresh container and port allocation
+   */
+  async startWebServer(terminalId) {
+    console.log(`🌐 Starting web server for session ${terminalId}...`);
 
+    const session = this.activeSessions.get(terminalId);
     if (!session) {
-      throw new Error(
-        "Terminal session not initialized. Please select a project first."
-      );
+      console.error(`   ❌ Session not found: ${terminalId}`);
+      return { code: -1, error: "SESSION_NOT_FOUND" };
     }
 
-    return new Promise(async (resolve, reject) => {
-      // Execute inside the project's container
-      const containerId = session.containerId;
-      if (!containerId) return reject(new Error("Container not initialized"));
+    // Create unique container name with timestamp to prevent caching
+    const timestamp = Date.now();
+    const webContainerName = `${session.containerId}-web-${timestamp}`;
+    // Use the same port as the container was using
+    const webPort = session.mappedPort;
 
-      // Maintain a simple logical working directory inside container
-      let workingDir = session.workingDirectory || "/workspace";
+    console.log(`   🏷️  Web container name: ${webContainerName}`);
+    console.log(`   🔌 Web port: ${webPort} (reusing container's port)`);
 
-      // Handle chained commands and cd internally by prefixing with 'cd'
-      const cmd = String(command).trim();
-      const parts = cmd
-        .split(/&&/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+    // Stop the development container first to free up the port
+    console.log(`   🛑 Stopping development container to free port...`);
+    try {
+      const stopResult = await spawnWait("docker", [
+        "stop",
+        session.containerId,
+      ]);
+      if (stopResult.code === 0) {
+        console.log(`   ✅ Development container stopped`);
+      } else {
+        console.log(`   ⚠️  Container stop returned code ${stopResult.code}`);
+      }
+    } catch (error) {
+      // Container might already be stopped or removed
+      if (
+        error.message.includes("No such container") ||
+        error.message.includes("is not running")
+      ) {
+        console.log(`   ✅ Development container already stopped`);
+      } else {
+        console.log(`   ⚠️  Container stop error: ${error.message}`);
+      }
+    }
 
-      const runOne = (cmdStr) =>
-        new Promise((res, rej) => {
-          const finalCmd = `cd ${JSON.stringify(workingDir)} && ${cmdStr}`;
-          const child = spawn(
-            "docker",
-            ["exec", "-i", containerId, "bash", "-lc", finalCmd],
-            { env: process.env, shell: false }
-          );
-          if (options.onProcess) options.onProcess(child);
-          child.stdout.on("data", (d) => options.onStdout?.(d.toString()));
-          child.stderr.on("data", (d) => options.onStderr?.(d.toString()));
-          child.on("close", (code) => res(code ?? 0));
-          child.on("error", (e) => rej(e));
-        });
+    // DESTROY ALL old web containers for this session (aggressive cleanup)
+    console.log(`   🧹 Destroying ALL old web containers for session...`);
+    const baseContainerName = session.containerId;
 
-      try {
-        for (const segment of parts) {
-          const m = segment.match(/^cd\s+(.*)$/i) || segment.match(/^cd$/i);
-          if (m) {
-            const target = (m[1] || "").trim();
-            if (!target || target === "~") workingDir = "/workspace";
-            else if (target.startsWith("/")) workingDir = target;
-            else workingDir = path.posix.resolve(workingDir, target);
-            session.workingDirectory = workingDir;
-            continue;
+    try {
+      // Find and destroy all containers with this session's base name + "-web"
+      const listResult = await spawnWait("docker", [
+        "ps",
+        "-a",
+        "--format",
+        "{{.Names}}",
+        "--filter",
+        `name=${baseContainerName}-web`,
+      ]);
+
+      if (listResult.code === 0 && listResult.stdout.trim()) {
+        const oldContainers = listResult.stdout
+          .trim()
+          .split("\n")
+          .filter((name) => name.trim());
+        console.log(
+          `   🎯 Found ${
+            oldContainers.length
+          } old containers to destroy: ${oldContainers.join(", ")}`
+        );
+
+        for (const containerName of oldContainers) {
+          try {
+            await spawnWait("docker", ["stop", containerName]);
+            await spawnWait("docker", ["rm", "-f", containerName]);
+            console.log(`   💥 Destroyed: ${containerName}`);
+          } catch (destroyError) {
+            console.log(
+              `   ⚠️  Could not destroy ${containerName}: ${destroyError.message}`
+            );
           }
-          await runOne(segment);
         }
-        resolve({
-          code: 0,
-          stdout: "",
-          stderr: "",
-          workingDirectory: workingDir,
-        });
-      } catch (e) {
-        reject(e);
       }
-    });
-  }
-
-  /**
-   * Start web server in session
-   */
-  async startWebServer(terminalId, port = 8080, options = {}) {
-    const session = this.activeSessions.get(terminalId);
-
-    if (!session) {
-      throw new Error("Terminal session not initialized.");
-    }
-    // Instead of installing nginx inside the dev container (slow on first run, problematic on Windows host),
-    // run a lightweight separate nginx:alpine container that mounts the project directory read-only.
-    const usingVolume = !!session.projectVolumeName;
-    const hostDir =
-      session.projectHostDir ||
-      path.join(config.getProjectsDir(), session.projectName);
-    let serveDir = hostDir;
-    if (!usingVolume) {
-      try {
-        if (fs.existsSync(path.join(hostDir, "public", "index.html"))) {
-          serveDir = path.join(hostDir, "public");
-        } else if (fs.existsSync(path.join(hostDir, "dist", "index.html"))) {
-          serveDir = path.join(hostDir, "dist");
-        } else if (!fs.existsSync(path.join(hostDir, "index.html"))) {
-          options.onStderr?.(
-            "⚠️  index.html not found; serving project root\n"
-          );
-        }
-      } catch {}
+      console.log(`   ✅ All old web containers destroyed!`);
+    } catch (cleanupError) {
+      console.log(`   ⚠️  Cleanup error: ${cleanupError.message}`);
     }
 
-    // Clean previous web container if exists
-    if (session.webContainerId) {
-      try {
-        await spawnWait("docker", ["rm", "-f", session.webContainerId]);
-      } catch {}
-      session.webContainerId = null;
+    console.log(`   ✅ Port ${webPort} available after cleanup`);
+
+    // Start nginx container with simple host mount
+    console.log(`   🐳 Starting nginx container with fresh cache...`);
+    console.log(`      Host directory: ${session.projectPath}`);
+    console.log(`      Nginx mount: /usr/share/nginx/html`);
+
+    // Detect project type based on files
+    const files = fs.readdirSync(session.projectPath);
+    const hasHtmlFile = files.some(
+      (file) => file.endsWith(".html") || file.endsWith(".htm")
+    );
+    const hasIndexJs = files.includes("index.js");
+
+    console.log(`   🔍 Project files: ${files.join(", ")}`);
+    console.log(`   🌐 Has HTML files: ${hasHtmlFile ? "YES" : "NO"}`);
+    console.log(`   📄 Has index.js: ${hasIndexJs ? "YES" : "NO"}`);
+
+    // Create nginx config with smart project handling
+    let nginxConfigContent;
+
+    if (hasHtmlFile) {
+      // Standard web project configuration
+      nginxConfigContent = `
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+    
+    # Disable all caching
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        etag off;
+    }
+    
+    # Disable caching for all file types
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        etag off;
+    }
+}
+`;
+    } else if (hasIndexJs) {
+      // Node.js project - serve index.js as main file
+      nginxConfigContent = `
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.js index.html index.htm;
+    
+    # Disable all caching
+    location / {
+        try_files $uri $uri/ @directory_listing;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        etag off;
+    }
+    
+    # Enable directory browsing for code projects
+    location @directory_listing {
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+    
+    # Serve JavaScript files with proper content type
+    location ~* \.js$ {
+        add_header Content-Type "text/plain; charset=utf-8";
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+    
+    # Serve source files with proper content type
+    location ~* \.(c|cpp|h|hpp|py|java)$ {
+        add_header Content-Type "text/plain; charset=utf-8";
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+}
+`;
+    } else {
+      // Source code project - enable directory browsing
+      nginxConfigContent = `
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    
+    # Enable directory browsing for source code projects
+    location / {
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        etag off;
+    }
+    
+    # Serve source files with proper content type for viewing
+    location ~* \.(c|cpp|h|hpp|py|java|js|ts|css|txt|md|json|xml|yml|yaml)$ {
+        add_header Content-Type "text/plain; charset=utf-8";
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+    
+    # Serve images and other binary files normally
+    location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|pdf)$ {
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+}
+`;
     }
 
-    // Enforce a fixed host port for web serving (config.WEB_PORT). Ignore caller's port except for logging.
-    const fixedPort = Number(config.WEB_PORT) || 8088;
-    const requested = Number(port) || undefined;
-    let webPort = fixedPort;
-    if (requested && requested !== fixedPort) {
-      options.onStderr?.(
-        `Requested port ${requested} ignored; using fixed WEB_PORT ${fixedPort}\n`
-      );
-    }
-    const webName = `${this.makeContainerName(
-      session.projectName,
-      session.userId,
-      terminalId
-    )}-web`;
+    // Write nginx config to temp directory with unique name
+    const nginxConfigPath = path.join(
+      session.projectPath,
+      `.nginx-${timestamp}.conf`
+    );
+    fs.writeFileSync(nginxConfigPath, nginxConfigContent);
+    console.log(`   📝 Created fresh nginx config: .nginx-${timestamp}.conf`);
 
-    // SPA-friendly nginx config mounted into container
-    const spaConf = `server {\n  listen 80;\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / {\n    try_files $uri $uri/ /index.html;\n  }\n}`;
-    const confPath = path.join(os.tmpdir(), `devdock-nginx-${terminalId}.conf`);
-    try {
-      fs.writeFileSync(confPath, spaConf, "utf8");
-    } catch {}
-
-    // Normalize Windows path for Docker mount (use forward slashes)
-    const mountDir = serveDir.replace(/\\/g, "/");
-    const args = [
+    const nginxArgs = [
       "run",
       "-d",
       "--rm",
       "--name",
-      webName,
+      webContainerName,
       "-p",
-      `${webPort}:80`,
-      ...(usingVolume
-        ? ["-v", `${session.projectVolumeName}:/usr/share/nginx/html:ro`]
-        : ["-v", `${mountDir}:/usr/share/nginx/html:ro`]),
+      `0.0.0.0:${webPort}:80`,
+      "-v",
+      `${session.projectPath}:/usr/share/nginx/html:ro`,
+      "-v",
+      `${nginxConfigPath}:/etc/nginx/conf.d/default.conf:ro`,
+      "nginx:alpine",
     ];
-    if (fs.existsSync(confPath)) {
-      args.push("-v", `${confPath}:/etc/nginx/conf.d/default.conf:ro`);
-    }
-    args.push("nginx:alpine");
 
-    const started = await spawnWait("docker", args);
-    if (started.code !== 0) {
-      // Fail fast if fixed port is busy or container can't start; do NOT fallback.
-      options.onStderr?.(
-        `Failed to start web server on fixed port ${webPort}: ` +
-          (started.stderr || started.stdout || "unknown error") +
-          "\n"
-      );
+    console.log(
+      `   🔥 Creating COMPLETELY FRESH container: ${webContainerName}`
+    );
+    console.log(`   📁 Mount: ${session.projectPath} -> /usr/share/nginx/html`);
+    console.log(
+      `   ⚙️  Config: ${nginxConfigPath} -> /etc/nginx/conf.d/default.conf`
+    );
+
+    console.log(`   💻 Nginx command: docker ${nginxArgs.join(" ")}`);
+    const result = await spawnWait("docker", nginxArgs);
+
+    if (result.code !== 0) {
+      console.error(`   ❌ Web server failed to start!`);
+      console.error(`      Error: ${result.stderr || result.stdout}`);
       return {
-        code: -1,
+        code: result.code,
         webPort,
-        serveDir,
-        error: "PORT_BUSY_OR_START_FAILED",
+        error: result.stderr || result.stdout,
       };
     }
 
-    session.webContainerId = webName;
+    console.log(`   ✅ Web server started successfully!`);
+    console.log(`   🌍 URL: http://localhost:${webPort}`);
+
+    // Store web container info in session
+    session.webContainerName = webContainerName;
     session.webPort = webPort;
-    return { code: 0, webPort, serveDir };
+
+    return {
+      code: 0,
+      url: `http://localhost:${webPort}`,
+      webPort,
+      info: {
+        projectName: session.projectName,
+        status: "started",
+        containerName: webContainerName,
+      },
+    };
   }
 
   /**
-   * Update terminal working directory
+   * Cleanup session - destroy containers and temp files
    */
+  async cleanupSession(terminalId) {
+    console.log(`🧹 Cleaning up session ${terminalId}...`);
+
+    const session = this.activeSessions.get(terminalId);
+    if (!session) {
+      console.log(`   ⚠️  Session not found: ${terminalId}`);
+      return;
+    }
+
+    // Stop and remove main container
+    if (session.containerId) {
+      console.log(`   🛑 Stopping container: ${session.containerId}`);
+      await spawnWait("docker", ["stop", session.containerId]).catch(() => {});
+      await spawnWait("docker", ["rm", "-f", session.containerId]).catch(
+        () => {}
+      );
+    }
+
+    // Stop and remove web container
+    if (session.webContainerName) {
+      console.log(`   🛑 Stopping web container: ${session.webContainerName}`);
+      await spawnWait("docker", ["stop", session.webContainerName]).catch(
+        () => {}
+      );
+      await spawnWait("docker", ["rm", "-f", session.webContainerName]).catch(
+        () => {}
+      );
+    }
+
+    // Clean up temporary directory
+    if (session.tempDir && fs.existsSync(session.tempDir)) {
+      console.log(`   🗑️  Removing temp directory: ${session.tempDir}`);
+      fs.rmSync(session.tempDir, { recursive: true, force: true });
+    }
+
+    // Remove from tracking
+    this.activeSessions.delete(terminalId);
+    if (session.containerId) {
+      this.activeContainers.delete(session.containerId);
+    }
+
+    console.log(`   ✅ Session cleanup completed`);
+  }
+
+  /**
+   * Clean up existing container with the same name
+   */
+  async cleanupExistingContainer(containerName) {
+    try {
+      // Check if container exists
+      const checkResult = await spawnWait("docker", [
+        "ps",
+        "-a",
+        "-q",
+        "-f",
+        `name=^${containerName}$`,
+      ]);
+
+      if (checkResult.stdout.trim()) {
+        console.log(`   🧹 Found existing container: ${containerName}`);
+        console.log(`   🛑 Stopping and removing existing container...`);
+
+        // Stop container (ignore errors)
+        await spawnWait("docker", ["stop", containerName]).catch(() => {});
+
+        // Remove container (ignore errors)
+        await spawnWait("docker", ["rm", "-f", containerName]).catch(() => {});
+
+        console.log(`   ✅ Existing container cleaned up`);
+      }
+    } catch (error) {
+      console.log(`   ⚠️  Container cleanup warning: ${error.message}`);
+    }
+  }
+
+  /**
+   * Ensure container name is unique by adding suffix if needed
+   */
+  async ensureUniqueContainerName(baseName) {
+    let containerName = baseName;
+    let attempt = 1;
+
+    while (attempt <= 5) {
+      try {
+        // Check if this name is in use
+        const checkResult = await spawnWait("docker", [
+          "ps",
+          "-a",
+          "-q",
+          "-f",
+          `name=^${containerName}$`,
+        ]);
+
+        if (!checkResult.stdout.trim()) {
+          // Name is available
+          return containerName;
+        }
+
+        // Name is taken, try with suffix
+        containerName = `${baseName}-${attempt}`;
+        attempt++;
+      } catch (error) {
+        // If check fails, assume name is available
+        return containerName;
+      }
+    }
+
+    // After 5 attempts, add timestamp
+    return `${baseName}-${Date.now()}`;
+  }
+
+  /**
+   * Helper methods
+   */
+  async checkPortAvailable(port) {
+    return new Promise((resolve, reject) => {
+      const server = net.createServer();
+
+      server.once("error", (err) => {
+        reject(err);
+      });
+
+      server.once("listening", () => {
+        server.close(() => {
+          resolve(true);
+        });
+      });
+
+      server.listen(port);
+    });
+  }
+
+  async getFreePort() {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.listen(0, () => {
+        const port = server.address().port;
+        server.close(() => resolve(port));
+      });
+    });
+  }
+
+  getProjectPath(projectName, ownerId) {
+    const projectsDir = path.join(process.cwd(), "projects");
+    return path.join(projectsDir, ownerId, projectName);
+  }
+
+  makeContainerName(projectName, ownerId, terminalId) {
+    const safeName = String(projectName || "unknown").replace(
+      /[^a-zA-Z0-9-]/g,
+      "-"
+    );
+    const safeOwner = String(ownerId || "user");
+    const safeTerminal = String(terminalId || Date.now());
+    const shortTerminal = safeTerminal.slice(-8);
+    return `devdock-${safeOwner}-${safeName}-${shortTerminal}`;
+  }
+
+  async ensureProjectExists(projectPath) {
+    if (!fs.existsSync(projectPath)) {
+      fs.mkdirSync(projectPath, { recursive: true });
+
+      // Create a simple index.html if it's an empty project
+      const indexPath = path.join(projectPath, "index.html");
+      if (!fs.existsSync(indexPath)) {
+        const defaultContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevDock Project</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 2rem; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐳 DevDock Project</h1>
+        <p>Welcome to your temporary containerized development environment!</p>
+        <p>This project is running in a Docker container with nginx serving on port 8088.</p>
+    </div>
+</body>
+</html>`;
+        fs.writeFileSync(indexPath, defaultContent);
+      }
+    }
+  }
+
+  async getProjectImage(projectPath) {
+    // Simple image detection based on files present
+    const files = fs.readdirSync(projectPath).map((f) => f.toLowerCase());
+
+    if (files.includes("package.json")) {
+      return "node:20-alpine";
+    } else if (files.some((f) => f.endsWith(".py"))) {
+      return "python:3.11-slim";
+    } else if (files.some((f) => f.endsWith(".java"))) {
+      return "eclipse-temurin:17-jdk";
+    } else if (files.some((f) => f.endsWith(".c") || f.endsWith(".cpp"))) {
+      return "gcc:12";
+    } else {
+      return "node:20-alpine"; // Default
+    }
+  }
+
+  // Additional methods for compatibility with existing code
+  async startTerminalSession(terminalId, projectName, ownerId) {
+    return this.initializeTerminalSession(terminalId, projectName, ownerId);
+  }
+
+  async stopTerminalSession(terminalId) {
+    return this.cleanupSession(terminalId);
+  }
+
+  async executeCommand(terminalId, command, options = {}) {
+    const session = this.activeSessions.get(terminalId);
+    if (!session) {
+      throw new Error(`Session not found: ${terminalId}`);
+    }
+
+    const {
+      workingDirectory = "/workspace",
+      onStdout,
+      onStderr,
+      onProcess,
+    } = options;
+    const dockerArgs = [
+      "exec",
+      "-i",
+      "-w",
+      workingDirectory,
+      session.containerId,
+      "bash",
+      "-c",
+      command,
+    ];
+
+    if (onProcess) {
+      // For streaming execution
+      const { spawn } = require("child_process");
+      const child = spawn("docker", dockerArgs);
+      onProcess(child);
+
+      if (onStdout) {
+        child.stdout.on("data", (data) => onStdout(data.toString()));
+      }
+      if (onStderr) {
+        child.stderr.on("data", (data) => onStderr(data.toString()));
+      }
+
+      return new Promise((resolve) => {
+        child.on("close", (code) => {
+          resolve({ code, workingDirectory });
+        });
+      });
+    } else {
+      // For simple execution
+      const result = await spawnWait("docker", dockerArgs);
+      return { code: result.code, workingDirectory };
+    }
+  }
+
+  // Web interface compatibility methods
+  getContainerUrl(containerInfo) {
+    if (!containerInfo) return null;
+    return `http://localhost:${containerInfo.mappedPort || 8080}`;
+  }
+
   updateTerminalWorkingDirectory(terminalId, workingDirectory) {
     const session = this.activeSessions.get(terminalId);
     if (session) {
       session.workingDirectory = workingDirectory;
       console.log(
-        `Updated terminal ${terminalId} working directory to: ${workingDirectory}`
+        `   📁 Updated working directory for ${terminalId}: ${workingDirectory}`
       );
     }
   }
@@ -423,284 +831,263 @@ class ContainerService {
     return this.activeSessions.get(terminalId);
   }
 
-  /**
-   * List sanitized session info for debugging
-   */
-  listSessions() {
-    const out = [];
-    for (const [tid, s] of this.activeSessions.entries()) {
-      out.push({
-        terminalId: tid,
-        projectName: s.projectName,
-        userId: s.userId,
-        containerId: s.containerId,
-        mappedPort: s.mappedPort,
-        webPort: s.webPort,
-        webContainerId: s.webContainerId,
-        workingDirectory: s.workingDirectory,
-        projectHostDir: s.projectHostDir,
-        baseImage: s.baseImage,
-        initialized: s.initialized,
-      });
-    }
-    return out;
+  getWebInfo(terminalId) {
+    const session = this.activeSessions.get(terminalId);
+    if (!session) return null;
+    return {
+      webPort: session.webPort || 8088,
+      webContainerName: session.webContainerName,
+      url: session.webPort ? `http://localhost:${session.webPort}` : null,
+    };
   }
 
-  /**
-   * Get user terminal sessions
-   */
   getUserTerminalSessions(userId) {
     const userTerminals = [];
-    for (const [terminalId, session] of this.activeSessions.entries()) {
-      if (session.userId === userId) {
+    for (const [terminalId, session] of this.activeSessions) {
+      if (session.ownerId === userId) {
         userTerminals.push(terminalId);
       }
     }
     return userTerminals;
   }
 
-  /**
-   * Get user containers
-   */
   getUserContainers(userId) {
     const userContainers = [];
-    for (const [terminalId, session] of this.activeSessions.entries()) {
-      if (session.userId === userId) {
-        userContainers.push({
-          containerId: `mock-container-${terminalId}`,
-          projectName: session.projectName,
-          type: "basic",
-        });
+    for (const [containerId, session] of this.activeContainers) {
+      if (session.ownerId === userId) {
+        userContainers.push({ containerId, session });
       }
     }
     return userContainers;
   }
 
-  /**
-   * Stop terminal session
-   */
-  async stopTerminalSession(terminalId) {
-    const session = this.activeSessions.get(terminalId);
-    if (session) {
-      this.activeSessions.delete(terminalId);
-      try {
-        if (session.containerId) {
-          await spawnWait("docker", ["rm", "-f", session.containerId]);
-        }
-        if (session.webContainerId) {
-          await spawnWait("docker", ["rm", "-f", session.webContainerId]);
-        }
-        if (session.projectVolumeName) {
-          await spawnWait("docker", [
-            "volume",
-            "rm",
-            session.projectVolumeName,
-          ]);
-        }
-      } catch {}
-      // Cleanup ephemeral directory if created
-      try {
-        if (session.ephemeralDir)
-          fs.rmSync(session.ephemeralDir, { recursive: true, force: true });
-      } catch {}
-      console.log(`Terminal session ${terminalId} stopped`);
-    }
-  }
-
-  /**
-   * Stop container (mock implementation)
-   */
   async stopContainer(containerId) {
     try {
-      await spawnWait("docker", ["rm", "-f", containerId]);
-    } catch {}
-  }
+      console.log(`   🛑 Stopping container: ${containerId}`);
+      await spawnWait("docker", ["stop", containerId]).catch(() => {});
+      await spawnWait("docker", ["rm", "-f", containerId]).catch(() => {});
 
-  // Sync a single file change from DB to ephemeral directory (if exists)
-  async syncFile(projectName, filePath) {
-    for (const session of this.activeSessions.values()) {
-      if (session.projectName === projectName && session.ephemeralDir) {
-        try {
-          const { ProjectModel, FileModel } = getModels();
-          if (!(ProjectModel && FileModel)) return;
-          const proj = await ProjectModel.findOne({ name: projectName }).lean();
-          if (!proj) return;
-          const doc = await FileModel.findOne({
-            project: proj._id,
-            path: filePath,
-            type: "file",
-          }).lean();
-          if (!doc) return;
-          const target = path.join(session.ephemeralDir, filePath);
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, doc.content || "", "utf8");
-        } catch (e) {
-          console.warn(`File sync failed for ${filePath}: ${e.message}`);
+      // Remove from tracking
+      this.activeContainers.delete(containerId);
+
+      // Find and remove session by containerId
+      for (const [terminalId, session] of this.activeSessions) {
+        if (session.containerId === containerId) {
+          this.activeSessions.delete(terminalId);
+          break;
         }
       }
+    } catch (error) {
+      console.error(
+        `   ❌ Error stopping container ${containerId}:`,
+        error.message
+      );
     }
   }
 
   /**
-   * Get container URL (mock implementation)
-   */
-  getContainerUrl(containerInfo) {
-    if (containerInfo && containerInfo.mappedPort) {
-      return `http://localhost:${containerInfo.mappedPort}`;
-    }
-    return null;
-  }
-
-  /**
-   * Cleanup old containers
+   * Global cleanup method called by server - does nothing for containerService
+   * Containers are managed by explicit session lifecycle, not automatic cleanup
    */
   async cleanup() {
-    // No-op: containers are per-session and removed on stop
-    console.log("Container cleanup checked");
+    // No automatic cleanup for containerService sessions
+    // Containers stay alive until explicitly closed by user
+    console.log(
+      "🔄 ContainerService cleanup called - no auto-cleanup performed"
+    );
+
+    // Only log active sessions count for monitoring
+    console.log(`📊 Active sessions: ${this.activeSessions.size}`);
+    console.log(`📊 Active containers: ${this.activeContainers.size}`);
   }
 
-  // Helpers
-  makeContainerName(projectName, userId, terminalId) {
-    const safeProj = String(projectName)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .slice(0, 40);
-    const safeUser = String(userId || "u")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .slice(0, 16);
-    return `devdock-${safeUser}-${safeProj}-${terminalId}-${Date.now().toString(
-      36
-    )}`;
-  }
+  /**
+   * Sync updated file to container's temporary directory
+   * Updates the file in the temp directory so web server serves latest content
+   */
+  async syncFile(projectName, filePath) {
+    console.log(`🔄 Syncing file to containers: ${projectName}/${filePath}`);
 
-  getFreePort() {
-    return new Promise((resolve, reject) => {
-      const srv = net.createServer();
-      srv.listen(0, () => {
-        const port = srv.address().port;
-        srv.close(() => resolve(port));
-      });
-      srv.on("error", (e) => reject(e));
-    });
-  }
+    try {
+      // Find active sessions for this project
+      for (const [terminalId, session] of this.activeSessions) {
+        if (session.projectName === projectName && session.tempDir) {
+          // Prevent multiple restarts if one is already in progress
+          if (session.autoRestartPending) {
+            console.log(
+              `   ⏳ Auto-restart already pending for ${terminalId}, skipping`
+            );
+            continue;
+          }
 
-  getWebInfo(terminalId) {
-    const s = this.activeSessions.get(terminalId);
-    if (!s) return null;
-    return {
-      webContainerId: s.webContainerId,
-      webPort: s.webPort,
-      projectName: s.projectName,
-      serveDir: s.projectHostDir,
-      projectVolumeName: s.projectVolumeName || null,
-    };
-  }
+          const { ProjectModel, FileModel } = getModels();
 
-  async getWebLogs(terminalId, tail = 200) {
-    const s = this.activeSessions.get(terminalId);
-    if (!s || !s.webContainerId) return { logs: "", code: -1 };
-    const out = await spawnWait("docker", [
-      "logs",
-      "--tail",
-      String(tail),
-      s.webContainerId,
-    ]);
-    return { code: out.code, logs: (out.stdout || "") + (out.stderr || "") };
-  }
+          if (!ProjectModel || !FileModel) {
+            console.log(`   ⚠️  Database models not available for sync`);
+            continue;
+          }
 
-  async syncProjectFiles(projectName, userId) {
-    const fs = require("fs");
-    const fsp = fs.promises;
-    const { getModels } = require("../config/database");
-    const { ProjectModel, FileModel } = getModels();
-    if (!(config.USE_DB_PROJECTS_BOOL && ProjectModel && FileModel)) return;
+          // Find the project in database
+          const dbProject = await ProjectModel.findOne({
+            name: projectName,
+          }).lean();
 
-    const proj = await ProjectModel.findOne({
-      owner: userId,
-      name: projectName,
-    }).lean();
-    if (!proj) throw new Error("Project not found");
-    const files = await FileModel.find({ project: proj._id }).lean();
-    const targetDir = path.join(config.getProjectsDir(), projectName);
-    await fsp.mkdir(targetDir, { recursive: true });
+          if (!dbProject) {
+            console.log(`   ⚠️  Project ${projectName} not found in database`);
+            continue;
+          }
 
-    for (const file of files) {
-      const rel = String(file.path || "");
-      if (!rel) continue;
-      const dest = path.join(targetDir, rel);
-      if (file.type === "folder") {
-        await fsp.mkdir(dest, { recursive: true });
-      } else {
-        await fsp.mkdir(path.dirname(dest), { recursive: true });
-        await fsp.writeFile(dest, file.content || "", "utf8");
+          // Find the updated file
+          const dbFile = await FileModel.findOne({
+            project: dbProject._id,
+            path: filePath,
+          }).lean();
+
+          if (dbFile && dbFile.type !== "folder") {
+            // Update the file in temp directory
+            const targetPath = path.join(session.tempDir, filePath);
+            const dir = path.dirname(targetPath);
+
+            // Ensure directory exists
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+
+            // Write updated content with verification
+            fs.writeFileSync(targetPath, dbFile.content || "", "utf8");
+
+            // Verify write was successful
+            const writtenContent = fs.readFileSync(targetPath, "utf8");
+            const expectedLength = (dbFile.content || "").length;
+
+            if (writtenContent.length === expectedLength) {
+              console.log(
+                `   ✅ Synced ${filePath} to ${session.tempDir} (${expectedLength} chars)`
+              );
+
+              // AUTOMATICALLY DESTROY AND RECREATE WEB SERVER FOR FRESH CONTENT
+              console.log(
+                `   🔄 Auto-restarting web server for fresh content...`
+              );
+
+              // Set restart pending flag to prevent race conditions
+              session.autoRestartPending = true;
+
+              try {
+                await this.startWebServer(session.terminalId);
+                console.log(
+                  `   🎉 SUCCESS! Web server auto-restarted with fresh content!`
+                );
+                console.log(
+                  `   🌍 Updated content now available at: http://localhost:${
+                    session.webPort || session.mappedPort
+                  }`
+                );
+              } catch (restartError) {
+                console.log(
+                  `   ❌ Auto-restart failed: ${restartError.message}`
+                );
+              } finally {
+                // Clear the pending flag after restart attempt
+                session.autoRestartPending = false;
+              }
+            } else {
+              console.log(
+                `   ⚠️  Sync verification failed! Expected: ${expectedLength}, Got: ${writtenContent.length}`
+              );
+            }
+          }
+        }
       }
+    } catch (error) {
+      console.error(`   ❌ Error syncing file: ${error.message}`);
+    }
+  }
+
+  /**
+   * SIMPLE APPROACH: Start a fresh container with updated project files
+   * No complex syncing - just create new container with fresh files from database
+   */
+  /**
+   * Create fresh container with updated project files for immediate content serving
+   */
+  async startFreshContainerForProject(projectName, userId) {
+    console.log(
+      `🚀 Starting fresh container for updated project: ${projectName}`
+    );
+
+    try {
+      const { ProjectModel, FileModel } = getModels();
+
+      if (!ProjectModel || !FileModel) {
+        console.log(`   ⚠️  Database not available, skipping fresh container`);
+        return;
+      }
+
+      // Find project in database
+      const dbProject = await ProjectModel.findOne({
+        name: projectName,
+        owner: userId,
+      }).lean();
+
+      if (!dbProject) {
+        // Try without userId
+        const dbProjectAny = await ProjectModel.findOne({
+          name: projectName,
+        }).lean();
+        if (!dbProjectAny) {
+          console.log(`   ⚠️  Project ${projectName} not found in database`);
+          return;
+        }
+      }
+
+      const project =
+        dbProject || (await ProjectModel.findOne({ name: projectName }).lean());
+
+      // Generate unique terminal ID for this fresh container
+      const freshTerminalId = `fresh-${projectName}-${Date.now()}`;
+
+      console.log(`   🆔 Fresh terminal ID: ${freshTerminalId}`);
+      console.log(`   📁 Project: ${project.name} (${project._id})`);
+
+      // Initialize fresh session (this will create temp dir with latest files)
+      const session = await this.initializeTerminalSession(
+        freshTerminalId,
+        project.name,
+        String(project.owner)
+      );
+
+      console.log(`   ✅ Fresh session created with latest files`);
+      console.log(`   📂 Fresh temp dir: ${session.tempDir}`);
+
+      // Start web server on new port
+      const webResult = await this.startWebServer(freshTerminalId);
+
+      if (webResult.code === 0) {
+        console.log(`   🌐 Fresh container serving updated files!`);
+        console.log(`   🔗 New URL: ${webResult.url}`);
+
+        // Store the fresh URL info (could be used by frontend)
+        session.freshUrl = webResult.url;
+        session.isFreshContainer = true;
+
+        return {
+          success: true,
+          url: webResult.url,
+          port: webResult.webPort,
+          terminalId: freshTerminalId,
+        };
+      } else {
+        console.log(`   ❌ Fresh web server failed: ${webResult.error}`);
+        // Clean up session if web server failed
+        await this.cleanupSession(freshTerminalId);
+        return { success: false, error: webResult.error };
+      }
+    } catch (error) {
+      console.error(`   ❌ Fresh container creation failed: ${error.message}`);
+      return { success: false, error: error.message };
     }
   }
 }
 
 module.exports = ContainerService;
-
-// Helpers specific to ContainerService methods
-ContainerService.prototype.makeVolumeName = function (
-  projectName,
-  userId,
-  terminalId
-) {
-  const safeProj = String(projectName)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .slice(0, 40);
-  const safeUser = String(userId || "u")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .slice(0, 16);
-  return `devdock-vol-${safeUser}-${safeProj}-${terminalId}-${Date.now().toString(
-    36
-  )}`;
-};
-
-ContainerService.prototype.populateFilesInContainer = async function (
-  containerId,
-  files
-) {
-  // Write folders/files directly inside container using docker exec + cat
-  // Files expected to have fields: path, type ('file'|'folder'), content (for files)
-  for (const f of files) {
-    try {
-      const rel = String(f.path || "").replace(/\\/g, "/");
-      if (!rel) continue;
-      if (f.type === "folder") {
-        await spawnWait("docker", [
-          "exec",
-          containerId,
-          "sh",
-          "-lc",
-          `mkdir -p /workspace/${rel}`,
-        ]);
-      } else {
-        const dir = path.posix.dirname(`/workspace/${rel}`);
-        await spawnWait("docker", [
-          "exec",
-          containerId,
-          "sh",
-          "-lc",
-          `mkdir -p ${dir}`,
-        ]);
-        await new Promise((resolve) => {
-          const child = spawn(
-            "docker",
-            ["exec", "-i", containerId, "sh", "-lc", `cat > /workspace/${rel}`],
-            { env: process.env, shell: false }
-          );
-          child.stdin.write(f.content || "");
-          child.stdin.end();
-          child.on("close", () => resolve());
-          child.on("error", () => resolve());
-        });
-      }
-    } catch (e) {
-      console.warn(`populate file failed for ${f.path}: ${e.message}`);
-    }
-  }
-};

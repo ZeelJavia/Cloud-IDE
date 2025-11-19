@@ -70,6 +70,40 @@ const Terminal = ({ socket, project, user }) => {
     loadProjectFiles();
   }, [project]);
 
+  // Handle project switching - close old terminals and create new one
+  useEffect(() => {
+    const currentProjectName = project?.name || project?.id;
+    
+    if (currentProjectName && terminals.length > 0) {
+      // Check if we've switched to a different project
+      const activeSession = terminals.find(t => t.id === activeTerminal);
+      const sessionProjectName = activeSession?.projectName;
+      
+      if (sessionProjectName && sessionProjectName !== currentProjectName) {
+        console.log(`🔄 Project switched from ${sessionProjectName} to ${currentProjectName}`);
+        
+        // Close all existing terminals for the old project
+        terminals.forEach(terminal => {
+          if (socket && terminal.id) {
+            console.log(`🚪 Closing old terminal for project switch: ${terminal.id}`);
+            socket.emit("close-project", { terminalId: terminal.id });
+          }
+        });
+        
+        // Clear terminals state
+        setTerminals([]);
+        setActiveTerminal(null);
+        setOutput({});
+        setTerminalStates({});
+        
+        // Create new terminal for new project after a short delay
+        setTimeout(() => {
+          createNewTerminal();
+        }, 500);
+      }
+    }
+  }, [project?.name, project?.id]);
+
   const flattenFiles = (files) => {
     let result = [];
     files.forEach((file) => {
@@ -114,13 +148,14 @@ const Terminal = ({ socket, project, user }) => {
         }));
 
         if (containerInfo.url) {
+          const port = containerInfo.url.split(':')[2] || '8088';
           setOutput((prev) => ({
             ...prev,
             [terminalId]: [
               ...(prev[terminalId] || []),
               {
                 type: "system",
-                content: `🌐 Web project available at: 8088`,
+                content: `🌐 Web project available at: ${port}`,
                 timestamp: new Date().toISOString(),
               },
             ],
@@ -141,6 +176,51 @@ const Terminal = ({ socket, project, user }) => {
             },
           ],
         }));
+      });
+
+      // Listen for file updates to restart web server if needed
+      socket.on("file-updated", (data) => {
+        const { projectName, filePath, content } = data;
+        const currentProjectName = project?.name || project?.id;
+        
+        // Only handle updates for current project
+        if (projectName !== currentProjectName) return;
+        
+        // Check if it's a web file that should trigger web server restart
+        const webFileExtensions = ['.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.json', '.xml'];
+        const isWebFile = webFileExtensions.some(ext => filePath.toLowerCase().endsWith(ext));
+        
+        if (isWebFile && activeTerminal) {
+          console.log(`📝 Web file updated: ${filePath}`);
+          
+          // Add feedback to terminal
+          setOutput((prev) => ({
+            ...prev,
+            [activeTerminal.id]: [
+              ...(prev[activeTerminal.id] || []),
+              {
+                type: "system",
+                content: `📝 File updated: ${filePath}`,
+                timestamp: new Date().toISOString(),
+              },
+              {
+                type: "system", 
+                content: `🔄 Restarting web server with updated files...`,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }));
+          
+          // Restart web server after a longer delay to ensure file sync completes
+          setTimeout(() => {
+            if (socket && activeTerminal) {
+              socket.emit("start-web-server", {
+                terminalId: activeTerminal.id, // Send the ID, not the full object
+                workingDirectory: "/workspace"
+              });
+            }
+          }, 2000); // Increased delay to 2 seconds
+        }
       });
 
       socket.on("command-completed", (data) => {
@@ -221,6 +301,7 @@ const Terminal = ({ socket, project, user }) => {
         socket.off("command-completed");
         socket.off("container-ready");
         socket.off("web-project-ready");
+        socket.off("file-updated");
       };
     }
   }, [socket, activeTerminal, project]);
@@ -358,10 +439,12 @@ const Terminal = ({ socket, project, user }) => {
   }, []); // Empty dependency array - only run on unmount
 
   const createNewTerminal = () => {
+    const projectName = project?.name || project?.id;
     const newTerminal = {
       id: nextTerminalId.current++,
       name: `Terminal ${nextTerminalId.current - 1}`,
-      workingDirectory: project?.name || project?.id || "",
+      workingDirectory: projectName || "",
+      projectName: projectName, // Store project name for comparison
       createdAt: new Date().toISOString(),
       containerized: true,
     };

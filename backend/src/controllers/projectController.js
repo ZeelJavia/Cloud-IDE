@@ -1,3 +1,6 @@
+/**
+ * Project Controller - Handles project CRUD operations and database management
+ */
 const projectService = require("../services/projectService");
 
 class ProjectController {
