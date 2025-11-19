@@ -164,7 +164,6 @@ module.exports = {
   poolKey,
   ensureWarmContainer,
   cleanupWarmContainers,
-  prePullDockerImages,
   dockerImageExists,
   dockerPullImage,
 };

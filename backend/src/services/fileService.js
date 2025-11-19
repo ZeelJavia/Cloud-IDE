@@ -84,14 +84,47 @@ class FileService {
         throw new Error("File not found");
       }
 
-      // Sync file changes to container
+      // AUTO-RESTART: Destroy current containers and create fresh ones
       try {
+        console.log(
+          `🔄 AUTO-RESTART: File saved for ${projectName}, restarting containers...`
+        );
         const ContainerService = require("./containerService");
         const containerService = new ContainerService();
-        // Note: Container sync functionality will be implemented later
-        console.log(`File sync to container for project: ${projectName}`);
-      } catch (syncError) {
-        console.warn(`Failed to sync file to container: ${syncError.message}`);
+
+        // Use the new auto-restart method with socket io
+        const restartedSessions =
+          await containerService.autoRestartProjectContainers(
+            projectName,
+            userId,
+            `file save: ${filePath}`,
+            io // Pass io for socket notifications
+          );
+
+        if (restartedSessions.length > 0) {
+          console.log(
+            `✅ AUTO-RESTART: Successfully restarted ${restartedSessions.length} sessions`
+          );
+
+          // Emit events for each restarted session
+          for (const {
+            terminalId,
+            session,
+            webServerRestarted,
+          } of restartedSessions) {
+            io.emit("container-restarted", {
+              terminalId,
+              projectName,
+              webServerRestarted,
+              message: `Container restarted due to file save: ${filePath}`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } else {
+          console.log(`ℹ️  No active sessions found for ${projectName}`);
+        }
+      } catch (restartError) {
+        console.error(`❌ Auto-restart failed: ${restartError.message}`);
       }
 
       io.to(projectName).emit("file-updated", {
@@ -99,30 +132,8 @@ class FileService {
         filePath,
         content,
       });
-      // Start fresh container with updated files (simple approach)
-      try {
-        const ContainerService = require("./containerService");
-        const containerService = new ContainerService();
-        if (
-          typeof containerService.startFreshContainerForProject === "function"
-        ) {
-          console.log(
-            `🚀 Starting fresh container with updated files for ${projectName}...`
-          );
-          await containerService.startFreshContainerForProject(
-            projectName,
-            userId
-          );
-          console.log(`✅ Fresh container started with updated ${filePath}!`);
-        } else {
-          console.log(`⚠️  Fresh container method not available`);
-        }
-      } catch (containerError) {
-        console.error(
-          `❌ Fresh container start failed: ${containerError.message}`
-        );
-      }
-      return { success: true, message: "File saved" };
+
+      return { success: true, message: "File saved and containers restarted" };
     }
 
     const fullPath = path.join(this.PROJECTS_DIR, projectName, filePath);

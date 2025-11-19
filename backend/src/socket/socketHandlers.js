@@ -200,7 +200,7 @@ const socketHandlers = (io) => {
           terminalId,
           command,
           {
-            workingDirectory: workingDirectory || "/workspace",
+            socket: socket, // Pass socket for file tree updates
             onStdout: (data) => {
               console.log(
                 `   📤 [${terminalId}] stdout chunk: ${data.length} bytes`
@@ -233,14 +233,6 @@ const socketHandlers = (io) => {
           `   📊 Result: exitCode=${result.code}, workingDir=${result.workingDirectory}`
         );
 
-        // Update terminal working directory if it changed
-        if (result.workingDirectory) {
-          containerTerminal.updateTerminalWorkingDirectory(
-            terminalId,
-            result.workingDirectory
-          );
-        }
-
         socket.emit("command-completed", {
           terminalId,
           exitCode: result.code,
@@ -249,11 +241,32 @@ const socketHandlers = (io) => {
       } catch (error) {
         console.error(`   ❌ Container command execution failed:`, error);
         activeRuns.delete(terminalId);
-        socket.emit("terminal-output", {
-          terminalId,
-          output: `❌ Container command error: ${error.message}\n`,
-          error: true,
-        });
+
+        // Check if this is a container not running error
+        if (
+          error.message.includes("not running") ||
+          error.message.includes("Session not found")
+        ) {
+          socket.emit("terminal-output", {
+            terminalId,
+            output: `❌ ${error.message}\n🔄 Please restart the terminal session to continue.\n`,
+            error: true,
+          });
+
+          // Emit a special event to trigger frontend session recovery
+          socket.emit("session-invalid", {
+            terminalId,
+            reason: "container_stopped",
+            message: error.message,
+          });
+        } else {
+          socket.emit("terminal-output", {
+            terminalId,
+            output: `❌ Container command error: ${error.message}\n`,
+            error: true,
+          });
+        }
+
         socket.emit("command-completed", { terminalId, exitCode: -1 });
       }
     });
@@ -675,6 +688,74 @@ const socketHandlers = (io) => {
       }
     });
 
+    // Validate session and container status
+    socket.on("validate-session", async (payload = {}) => {
+      const { terminalId } = payload;
+
+      if (!terminalId) {
+        socket.emit("session-validation-result", {
+          valid: false,
+          reason: "missing_terminal_id",
+        });
+        return;
+      }
+
+      try {
+        const validation = await containerTerminal.validateSession(terminalId);
+
+        if (validation.valid) {
+          const sessionInfo = containerTerminal.getSessionInfo(terminalId);
+          socket.emit("session-validation-result", {
+            valid: true,
+            terminalId,
+            sessionInfo,
+          });
+        } else {
+          socket.emit("session-validation-result", {
+            valid: false,
+            terminalId,
+            reason: validation.reason,
+          });
+        }
+      } catch (error) {
+        socket.emit("session-validation-result", {
+          valid: false,
+          terminalId,
+          reason: "validation_error",
+          error: error.message,
+        });
+      }
+    });
+
+    // Get session info for reconnection
+    socket.on("get-session-info", (payload = {}) => {
+      const { terminalId } = payload;
+
+      if (!terminalId) {
+        socket.emit("session-info-result", {
+          success: false,
+          error: "missing_terminal_id",
+        });
+        return;
+      }
+
+      const sessionInfo = containerTerminal.getSessionInfo(terminalId);
+
+      if (sessionInfo) {
+        socket.emit("session-info-result", {
+          success: true,
+          terminalId,
+          sessionInfo,
+        });
+      } else {
+        socket.emit("session-info-result", {
+          success: false,
+          terminalId,
+          error: "session_not_found",
+        });
+      }
+    });
+
     // Handle socket disconnect - minimal cleanup (containers persist)
     socket.on("disconnect", async (reason) => {
       console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
@@ -685,6 +766,81 @@ const socketHandlers = (io) => {
       console.log(
         "🔄 Socket disconnected - containers remain active for reconnection"
       );
+    });
+
+    // Explicit project close - cleanup specific session
+    socket.on("close-project", async (data) => {
+      const { terminalId, projectName, userId } = data || {};
+
+      console.log(`🚪 Project close requested:`, data);
+
+      try {
+        if (terminalId) {
+          // Direct terminal cleanup
+          await containerTerminal.cleanupSession(terminalId);
+          socket.emit("project-closed", { terminalId, success: true });
+          console.log(`✅ Project session ${terminalId} closed successfully`);
+        } else if (projectName && userId) {
+          // Find all sessions for this project and user
+          const userSessions =
+            containerTerminal.getUserTerminalSessions(userId);
+          let cleanedUp = 0;
+
+          for (const sessionTerminalId of userSessions) {
+            const session = containerTerminal.getSession(sessionTerminalId);
+            if (session && session.projectName === projectName) {
+              await containerTerminal.cleanupSession(sessionTerminalId);
+              cleanedUp++;
+            }
+          }
+
+          socket.emit("project-closed", {
+            projectName,
+            cleanedUp,
+            success: true,
+          });
+          console.log(
+            `✅ Project ${projectName} closed - cleaned up ${cleanedUp} sessions`
+          );
+        } else {
+          console.error(
+            "❌ Invalid project close request - missing terminalId or projectName+userId"
+          );
+          socket.emit("project-closed", {
+            success: false,
+            error: "Missing required parameters",
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error closing project:`, error);
+        socket.emit("project-closed", { success: false, error: error.message });
+      }
+    });
+
+    // Handle socket disconnect - minimal cleanup (containers persist)
+    socket.on("disconnect", async (reason) => {
+      console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
+
+      // Don't automatically destroy containers on disconnect
+      // Containers should persist through page refreshes and temporary disconnections
+      // Only cleanup on explicit project close or session timeout
+      console.log(
+        "🔄 Socket disconnected - containers remain active for reconnection"
+      );
+    });
+
+    // Handle container restart notifications
+    socket.on("container-restart-complete", (data) => {
+      const { terminalId, projectName } = data || {};
+      console.log(`🎉 Container restart completed for terminal: ${terminalId}`);
+
+      // Emit confirmation to all clients in the project room
+      io.to(projectName).emit("container-ready", {
+        terminalId,
+        projectName,
+        restarted: true,
+        timestamp: new Date().toISOString(),
+      });
     });
 
     // Explicit project close - cleanup specific session

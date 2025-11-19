@@ -9,21 +9,18 @@ const { dockerImageExists, dockerPullImage } = require("../utils/dockerUtils");
 const { getModels } = require("../config/database");
 
 /**
- * Simple Container Service for Temporary Workflow
- * - User selects project -> creates temporary container
- * - Files served temporarily from host directory
- * - Web projects get nginx on port 8088
- * - Container destroys when done (no persistence)
- */
-/**
  * ContainerService - Manages Docker containers for project execution
- * Handles container lifecycle, web serving, and file synchronization
+ * Handles container lifecycle, web serving, file synchronization, and auto-restart
  */
 class ContainerService {
   constructor() {
     this.activeContainers = new Map(); // containerId -> containerInfo
     this.activeSessions = new Map(); // terminalId -> sessionInfo
     this.windowsShell = this.detectWindowsShell();
+    this.stateFile = path.join(os.tmpdir(), "devdock-container-state.json");
+
+    // Load persistent state on startup
+    this.loadState();
   }
 
   detectWindowsShell() {
@@ -63,6 +60,106 @@ class ContainerService {
       return "cmd.exe";
     } catch (error) {
       return "cmd.exe";
+    }
+  }
+
+  /**
+   * Load container state from disk to recover from server restarts
+   */
+  loadState() {
+    try {
+      if (fs.existsSync(this.stateFile)) {
+        const stateData = JSON.parse(fs.readFileSync(this.stateFile, "utf8"));
+        console.log("🔄 Loading container state from disk...");
+
+        // Verify containers are still running and restore state
+        this.verifyAndRestoreContainers(stateData);
+      }
+    } catch (error) {
+      console.log(`⚠️  Error loading container state: ${error.message}`);
+    }
+  }
+
+  /**
+   * Save current container state to disk
+   */
+  saveState() {
+    try {
+      const stateData = {
+        sessions: Array.from(this.activeSessions.entries()).map(
+          ([id, session]) => [
+            id,
+            {
+              ...session,
+              created: session.created.toISOString(),
+            },
+          ]
+        ),
+        containers: Array.from(this.activeContainers.entries()),
+        timestamp: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(this.stateFile, JSON.stringify(stateData, null, 2));
+    } catch (error) {
+      console.log(`⚠️  Error saving container state: ${error.message}`);
+    }
+  }
+
+  /**
+   * Verify containers are still running and restore valid sessions
+   */
+  async verifyAndRestoreContainers(stateData) {
+    let restoredCount = 0;
+
+    try {
+      for (const [terminalId, sessionData] of stateData.sessions || []) {
+        // Convert created date back from ISO string
+        if (sessionData.created && typeof sessionData.created === "string") {
+          sessionData.created = new Date(sessionData.created);
+        }
+
+        // Check if container is still running
+        if (sessionData.containerId) {
+          const isRunning = await this.isContainerRunning(
+            sessionData.containerId
+          );
+          if (isRunning) {
+            console.log(
+              `   ✅ Restored session: ${terminalId} -> ${sessionData.containerId}`
+            );
+            this.activeSessions.set(terminalId, sessionData);
+            this.activeContainers.set(sessionData.containerId, sessionData);
+            restoredCount++;
+          } else {
+            console.log(
+              `   🗑️  Container ${sessionData.containerId} no longer running, skipping`
+            );
+          }
+        }
+      }
+
+      if (restoredCount > 0) {
+        console.log(`🎉 Restored ${restoredCount} active container sessions`);
+      }
+    } catch (error) {
+      console.log(`⚠️  Error verifying containers: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if a container is still running
+   */
+  async isContainerRunning(containerId) {
+    try {
+      const result = await spawnWait("docker", [
+        "ps",
+        "-q",
+        "-f",
+        `name=^${containerId}$`,
+      ]);
+      return result.code === 0 && result.stdout.trim().length > 0;
+    } catch (error) {
+      return false;
     }
   }
 
@@ -267,6 +364,10 @@ class ContainerService {
     this.activeContainers.set(containerId, sessionInfo);
 
     console.log(`   📊 Session registered in memory`);
+
+    // Save state to disk for server restart recovery
+    this.saveState();
+
     return sessionInfo;
   }
 
@@ -589,6 +690,9 @@ server {
     }
 
     console.log(`   ✅ Session cleanup completed`);
+
+    // Save updated state to disk
+    this.saveState();
   }
 
   /**
@@ -754,36 +858,126 @@ server {
     }
   }
 
-  // Additional methods for compatibility with existing code
-  async startTerminalSession(terminalId, projectName, ownerId) {
-    return this.initializeTerminalSession(terminalId, projectName, ownerId);
-  }
-
-  async stopTerminalSession(terminalId) {
-    return this.cleanupSession(terminalId);
-  }
-
   async executeCommand(terminalId, command, options = {}) {
-    const session = this.activeSessions.get(terminalId);
+    let session = this.activeSessions.get(terminalId);
     if (!session) {
-      throw new Error(`Session not found: ${terminalId}`);
+      throw new Error(
+        `Session not found: ${terminalId}. Please reinitialize the terminal.`
+      );
     }
 
-    const {
-      workingDirectory = "/workspace",
-      onStdout,
-      onStderr,
-      onProcess,
-    } = options;
+    // Verify container is still running before executing command
+    if (session.containerId) {
+      const isRunning = await this.isContainerRunning(session.containerId);
+      if (!isRunning) {
+        console.log(
+          `⚠️  Container ${session.containerId} is no longer running. Auto-recovering...`
+        );
+
+        // AUTO-RECOVERY: Recreate the session with the same terminal ID
+        try {
+          console.log(`🔄 Auto-recovering session: ${terminalId}`);
+          const hadWebServer = session.webContainerName || session.webPort;
+
+          // Store session info for recreation
+          const sessionInfo = {
+            projectName: session.projectName,
+            ownerId: session.ownerId,
+          };
+
+          // Clean up dead session
+          this.activeSessions.delete(terminalId);
+          this.activeContainers.delete(session.containerId);
+          this.saveState();
+
+          // Recreate session with same terminal ID
+          const newSession = await this.initializeTerminalSession(
+            terminalId,
+            sessionInfo.projectName,
+            sessionInfo.ownerId
+          );
+
+          // Restart web server if it was running
+          if (hadWebServer) {
+            try {
+              await this.startWebServer(terminalId);
+              console.log(`🌐 Auto-recovered web server for ${terminalId}`);
+            } catch (webError) {
+              console.log(
+                `⚠️  Web server auto-recovery failed: ${webError.message}`
+              );
+            }
+          }
+
+          // Update session reference and verify it's properly stored
+          session = newSession;
+
+          // Double-check the session is properly stored in activeSessions and get fresh reference
+          session = this.activeSessions.get(terminalId);
+          if (!session) {
+            throw new Error(
+              `Failed to retrieve recovered session for ${terminalId}`
+            );
+          }
+
+          console.log(
+            `🔍 Session verification: container=${session.containerId}, project=${session.projectName}`
+          );
+
+          // Notify frontend about auto-recovery
+          if (options.socket) {
+            options.socket.emit("terminal-output", {
+              terminalId,
+              output: `🔄 Container was restarted automatically. Ready for commands!\n`,
+            });
+
+            options.socket.emit("container-recovered", {
+              terminalId,
+              message: "Container auto-recovered successfully",
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          console.log(`✅ Auto-recovery completed for session: ${terminalId}`);
+        } catch (recoveryError) {
+          console.error(`❌ Auto-recovery failed: ${recoveryError.message}`);
+          throw new Error(
+            `Container ${session.containerId} is not running and auto-recovery failed: ${recoveryError.message}. Please restart the terminal session.`
+          );
+        }
+      }
+    }
+
+    const { onStdout, onStderr, onProcess, socket } = options;
+
+    // Use session's current working directory
+    const currentWorkingDir = session.workingDirectory || "/workspace";
+
+    // Check if this is a directory change command
+    const isCdCommand = command.trim().match(/^cd(\\s|$)/);
+
+    // For all commands, we'll execute them with PWD tracking to maintain directory state
+    let actualCommand = command;
+    if (isCdCommand) {
+      // For cd commands, handle them specially
+      const cdTarget = command.replace(/^cd\\s*/, "").trim();
+      const cdPath = cdTarget || "~";
+      // Execute cd and then get PWD to track directory change
+      actualCommand = `cd "${cdPath}" 2>/dev/null && pwd || (echo "cd: ${cdPath}: No such file or directory" >&2; echo "${currentWorkingDir}")`;
+    } else {
+      // For non-cd commands, execute normally but also get PWD to maintain state
+      actualCommand = `${command}; echo "__PWD_MARKER__"; pwd`;
+    }
+
     const dockerArgs = [
       "exec",
       "-i",
       "-w",
-      workingDirectory,
+      currentWorkingDir,
       session.containerId,
       "bash",
       "-c",
-      command,
+      actualCommand,
     ];
 
     if (onProcess) {
@@ -792,22 +986,140 @@ server {
       const child = spawn("docker", dockerArgs);
       onProcess(child);
 
+      let commandOutput = "";
+
       if (onStdout) {
-        child.stdout.on("data", (data) => onStdout(data.toString()));
+        child.stdout.on("data", (data) => {
+          const dataStr = data.toString();
+          commandOutput += dataStr;
+          onStdout(dataStr);
+        });
       }
       if (onStderr) {
-        child.stderr.on("data", (data) => onStderr(data.toString()));
+        child.stderr.on("data", (data) => {
+          const dataStr = data.toString();
+          commandOutput += dataStr;
+          onStderr(dataStr);
+        });
       }
 
-      return new Promise((resolve) => {
-        child.on("close", (code) => {
-          resolve({ code, workingDirectory });
+      return new Promise(async (resolve) => {
+        child.on("close", async (code) => {
+          let newWorkingDirectory = currentWorkingDir;
+          let cleanOutput = commandOutput;
+
+          // Extract PWD from output and clean it
+          if (isCdCommand) {
+            // For cd commands, the last line should be the new directory
+            const lines = commandOutput.trim().split("\\n");
+            const lastLine = lines[lines.length - 1].trim();
+            if (lastLine.startsWith("/")) {
+              newWorkingDirectory = lastLine;
+              session.workingDirectory = newWorkingDirectory;
+              console.log(
+                `   📁 Working directory changed to: ${newWorkingDirectory}`
+              );
+              // Remove PWD from output for cd commands
+              cleanOutput = lines.slice(0, -1).join("\\n");
+            }
+          } else {
+            // For non-cd commands, extract PWD after the marker
+            const pwdMarkerIndex = commandOutput.lastIndexOf("__PWD_MARKER__");
+            if (pwdMarkerIndex !== -1) {
+              const afterMarker = commandOutput
+                .substring(pwdMarkerIndex + "__PWD_MARKER__".length)
+                .trim();
+              const lines = afterMarker.split("\\n");
+              const firstLine = lines[0].trim();
+              if (firstLine.startsWith("/")) {
+                newWorkingDirectory = firstLine;
+                session.workingDirectory = newWorkingDirectory;
+              }
+              // Remove PWD marker and output from the command output
+              cleanOutput = commandOutput.substring(0, pwdMarkerIndex);
+            }
+
+            // For file-modifying commands, immediately sync to MongoDB
+            const fileModifyCommands =
+              /^(mkdir|rmdir|rm|mv|cp|touch|nano|vim|vi|emacs|tee|echo)(\\s|$)/i;
+            const isFileModifying =
+              fileModifyCommands.test(command.trim()) ||
+              command.includes(">") ||
+              command.includes(">>") ||
+              command.includes("tee");
+
+            if (isFileModifying) {
+              console.log(`🔄 File-modifying command detected: ${command}`);
+              await this.syncContainerToHost(session, command);
+              await this.notifyFileTreeUpdate(session, socket);
+            }
+          }
+
+          resolve({
+            code,
+            workingDirectory: newWorkingDirectory,
+            output: cleanOutput,
+          });
         });
       });
     } else {
       // For simple execution
       const result = await spawnWait("docker", dockerArgs);
-      return { code: result.code, workingDirectory };
+      let newWorkingDirectory = currentWorkingDir;
+
+      // Handle cd command results
+      if (isCdCommand) {
+        // Extract new working directory from pwd output (always the last line)
+        const lines = result.stdout.trim().split("\\n");
+        const lastLine = lines[lines.length - 1].trim();
+        if (lastLine.startsWith("/")) {
+          newWorkingDirectory = lastLine;
+          session.workingDirectory = newWorkingDirectory;
+          console.log(
+            `   📁 Working directory changed to: ${newWorkingDirectory}`
+          );
+          // Clean output for cd commands - remove the PWD line
+          result.stdout = lines.slice(0, -1).join("\\n");
+        }
+      } else {
+        // Extract PWD from output for directory tracking
+        const pwdMarkerIndex = result.stdout.lastIndexOf("__PWD_MARKER__");
+        if (pwdMarkerIndex !== -1) {
+          const afterMarker = result.stdout
+            .substring(pwdMarkerIndex + "__PWD_MARKER__".length)
+            .trim();
+          const lines = afterMarker.split("\n");
+          const firstLine = lines[0].trim();
+          if (firstLine.startsWith("/")) {
+            newWorkingDirectory = firstLine;
+            session.workingDirectory = newWorkingDirectory;
+          }
+          // Clean the output
+          result.stdout = result.stdout.substring(0, pwdMarkerIndex);
+        }
+
+        // For file-modifying commands, immediately sync to MongoDB
+        const fileModifyCommands =
+          /^(mkdir|rmdir|rm|mv|cp|touch|nano|vim|vi|emacs|tee|echo)(\s|$)/i;
+        const isFileModifying =
+          fileModifyCommands.test(command.trim()) ||
+          command.includes(">") ||
+          command.includes(">>") ||
+          command.includes("tee");
+
+        if (isFileModifying) {
+          console.log(`🔄 File-modifying command detected: ${command}`);
+          await this.syncContainerToHost(session, command);
+          await this.notifyFileTreeUpdate(session, socket);
+        }
+      }
+
+      return {
+        code: result.code,
+        workingDirectory: newWorkingDirectory,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
     }
   }
 
@@ -815,6 +1127,49 @@ server {
   getContainerUrl(containerInfo) {
     if (!containerInfo) return null;
     return `http://localhost:${containerInfo.mappedPort || 8080}`;
+  }
+
+  /**
+   * Sync updated file to container when file changes are detected
+   */
+  async notifyFileChange(terminalId, filePath) {
+    const session = this.activeSessions.get(terminalId);
+    if (session) {
+      console.log(`🔔 File change notification: ${filePath}`);
+      // File changes are now handled by auto-restart, so just log
+      console.log(
+        `   ℹ️  Auto-restart will handle file sync for ${terminalId}`
+      );
+    }
+  }
+
+  // Notify frontend about file tree changes
+  async notifyFileTreeUpdate(session, socket) {
+    try {
+      console.log(`🌳 Notifying frontend of file tree changes...`);
+
+      if (socket) {
+        // Emit file tree refresh event to the project room
+        socket.to(session.projectName).emit("file-tree-update", {
+          projectName: session.projectName,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Also emit to the current socket
+        socket.emit("file-tree-update", {
+          projectName: session.projectName,
+          timestamp: new Date().toISOString(),
+        });
+
+        console.log(
+          `   ✅ File tree update notification sent for project: ${session.projectName}`
+        );
+      } else {
+        console.log(`   ⚠️  Socket instance not available`);
+      }
+    } catch (error) {
+      console.log(`   ⚠️  Error notifying file tree update: ${error.message}`);
+    }
   }
 
   updateTerminalWorkingDirectory(terminalId, workingDirectory) {
@@ -886,9 +1241,195 @@ server {
   }
 
   /**
-   * Global cleanup method called by server - does nothing for containerService
-   * Containers are managed by explicit session lifecycle, not automatic cleanup
+   * Recreate a session with the same terminal ID (for auto-restart)
    */
+  async recreateSession(
+    terminalId,
+    projectName,
+    ownerId,
+    preserveWebServer = false
+  ) {
+    console.log(
+      `🔄 Recreating session: ${terminalId} for project: ${projectName}`
+    );
+
+    // Store current session info if it exists
+    const currentSession = this.activeSessions.get(terminalId);
+    const hadWebServer =
+      currentSession?.webContainerName || currentSession?.webPort;
+
+    // Clean up existing session
+    if (currentSession) {
+      await this.cleanupSession(terminalId);
+    }
+
+    // Create new session
+    const newSession = await this.initializeTerminalSession(
+      terminalId,
+      projectName,
+      ownerId
+    );
+
+    // Restart web server if it was running before
+    if (preserveWebServer && hadWebServer) {
+      console.log(`🌐 Restarting web server for recreated session...`);
+      try {
+        await this.startWebServer(terminalId);
+        console.log(`✅ Web server restarted for session: ${terminalId}`);
+      } catch (webError) {
+        console.log(`⚠️  Web server restart failed: ${webError.message}`);
+      }
+    }
+
+    return newSession;
+  }
+
+  /**
+   * Auto-restart all containers for a specific project with proper frontend reconnection
+   */
+  async autoRestartProjectContainers(
+    projectName,
+    ownerId,
+    reason = "file save",
+    io = null
+  ) {
+    console.log(
+      `🔄 AUTO-RESTART: Restarting all containers for project: ${projectName}`
+    );
+    console.log(`📋 Reason: ${reason}`);
+
+    // Find all sessions for this project
+    const projectSessions = [];
+    for (const [terminalId, session] of this.activeSessions) {
+      if (session.projectName === projectName && session.ownerId === ownerId) {
+        projectSessions.push({ terminalId, session });
+      }
+    }
+
+    if (projectSessions.length === 0) {
+      console.log(`ℹ️  No active sessions found for project: ${projectName}`);
+      return [];
+    }
+
+    console.log(`📊 Found ${projectSessions.length} sessions to restart`);
+    const restartedSessions = [];
+
+    for (const { terminalId, session } of projectSessions) {
+      try {
+        const hadWebServer = session.webContainerName || session.webPort;
+
+        // Notify frontend about impending restart
+        if (io) {
+          io.to(projectName).emit("container-restarting", {
+            terminalId,
+            projectName,
+            message: `Restarting container due to ${reason}...`,
+          });
+        }
+
+        const newSession = await this.recreateSession(
+          terminalId,
+          projectName,
+          ownerId,
+          hadWebServer
+        );
+
+        restartedSessions.push({
+          terminalId,
+          session: newSession,
+          webServerRestarted: hadWebServer,
+          containerId: newSession.containerId,
+          mappedPort: newSession.mappedPort,
+          webPort: newSession.webPort,
+        });
+
+        // Notify frontend that container is ready
+        if (io) {
+          io.to(projectName).emit("container-ready", {
+            terminalId,
+            projectName,
+            containerInfo: {
+              projectType: newSession.projectType || newSession.imageName,
+              url: this.getContainerUrl(newSession),
+              containerId: newSession.containerId,
+              mappedPort: newSession.mappedPort,
+              webPort: newSession.webPort,
+            },
+            restarted: true,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Send terminal output to notify user
+          io.to(projectName).emit("terminal-output", {
+            terminalId,
+            output: `🔄 Container restarted successfully! Ready for commands.\n`,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        console.log(`✅ Successfully restarted session: ${terminalId}`);
+      } catch (error) {
+        console.error(
+          `❌ Failed to restart session ${terminalId}: ${error.message}`
+        );
+
+        // Notify frontend about restart failure
+        if (io) {
+          io.to(projectName).emit("container-restart-failed", {
+            terminalId,
+            projectName,
+            error: error.message,
+          });
+        }
+      }
+    }
+
+    console.log(
+      `🎉 AUTO-RESTART completed! Restarted ${restartedSessions.length}/${projectSessions.length} sessions`
+    );
+    return restartedSessions;
+  }
+
+  /**
+   * Get session info for frontend reconnection
+   */
+  getSessionInfo(terminalId) {
+    const session = this.activeSessions.get(terminalId);
+    if (!session) {
+      return null;
+    }
+
+    return {
+      terminalId,
+      projectName: session.projectName,
+      containerId: session.containerId,
+      mappedPort: session.mappedPort,
+      webPort: session.webPort,
+      webContainerName: session.webContainerName,
+      projectType: session.projectType || session.imageName,
+      workingDirectory: session.workingDirectory || "/workspace",
+      isActive: true,
+    };
+  }
+
+  /**
+   * Check if session exists and container is running
+   */
+  async validateSession(terminalId) {
+    const session = this.activeSessions.get(terminalId);
+    if (!session) {
+      return { valid: false, reason: "session_not_found" };
+    }
+
+    if (session.containerId) {
+      const isRunning = await this.isContainerRunning(session.containerId);
+      if (!isRunning) {
+        return { valid: false, reason: "container_not_running" };
+      }
+    }
+
+    return { valid: true, session };
+  }
   async cleanup() {
     // No automatic cleanup for containerService sessions
     // Containers stay alive until explicitly closed by user
@@ -899,194 +1440,6 @@ server {
     // Only log active sessions count for monitoring
     console.log(`📊 Active sessions: ${this.activeSessions.size}`);
     console.log(`📊 Active containers: ${this.activeContainers.size}`);
-  }
-
-  /**
-   * Sync updated file to container's temporary directory
-   * Updates the file in the temp directory so web server serves latest content
-   */
-  async syncFile(projectName, filePath) {
-    console.log(`🔄 Syncing file to containers: ${projectName}/${filePath}`);
-
-    try {
-      // Find active sessions for this project
-      for (const [terminalId, session] of this.activeSessions) {
-        if (session.projectName === projectName && session.tempDir) {
-          // Prevent multiple restarts if one is already in progress
-          if (session.autoRestartPending) {
-            console.log(
-              `   ⏳ Auto-restart already pending for ${terminalId}, skipping`
-            );
-            continue;
-          }
-
-          const { ProjectModel, FileModel } = getModels();
-
-          if (!ProjectModel || !FileModel) {
-            console.log(`   ⚠️  Database models not available for sync`);
-            continue;
-          }
-
-          // Find the project in database
-          const dbProject = await ProjectModel.findOne({
-            name: projectName,
-          }).lean();
-
-          if (!dbProject) {
-            console.log(`   ⚠️  Project ${projectName} not found in database`);
-            continue;
-          }
-
-          // Find the updated file
-          const dbFile = await FileModel.findOne({
-            project: dbProject._id,
-            path: filePath,
-          }).lean();
-
-          if (dbFile && dbFile.type !== "folder") {
-            // Update the file in temp directory
-            const targetPath = path.join(session.tempDir, filePath);
-            const dir = path.dirname(targetPath);
-
-            // Ensure directory exists
-            if (!fs.existsSync(dir)) {
-              fs.mkdirSync(dir, { recursive: true });
-            }
-
-            // Write updated content with verification
-            fs.writeFileSync(targetPath, dbFile.content || "", "utf8");
-
-            // Verify write was successful
-            const writtenContent = fs.readFileSync(targetPath, "utf8");
-            const expectedLength = (dbFile.content || "").length;
-
-            if (writtenContent.length === expectedLength) {
-              console.log(
-                `   ✅ Synced ${filePath} to ${session.tempDir} (${expectedLength} chars)`
-              );
-
-              // AUTOMATICALLY DESTROY AND RECREATE WEB SERVER FOR FRESH CONTENT
-              console.log(
-                `   🔄 Auto-restarting web server for fresh content...`
-              );
-
-              // Set restart pending flag to prevent race conditions
-              session.autoRestartPending = true;
-
-              try {
-                await this.startWebServer(session.terminalId);
-                console.log(
-                  `   🎉 SUCCESS! Web server auto-restarted with fresh content!`
-                );
-                console.log(
-                  `   🌍 Updated content now available at: http://localhost:${
-                    session.webPort || session.mappedPort
-                  }`
-                );
-              } catch (restartError) {
-                console.log(
-                  `   ❌ Auto-restart failed: ${restartError.message}`
-                );
-              } finally {
-                // Clear the pending flag after restart attempt
-                session.autoRestartPending = false;
-              }
-            } else {
-              console.log(
-                `   ⚠️  Sync verification failed! Expected: ${expectedLength}, Got: ${writtenContent.length}`
-              );
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error(`   ❌ Error syncing file: ${error.message}`);
-    }
-  }
-
-  /**
-   * SIMPLE APPROACH: Start a fresh container with updated project files
-   * No complex syncing - just create new container with fresh files from database
-   */
-  /**
-   * Create fresh container with updated project files for immediate content serving
-   */
-  async startFreshContainerForProject(projectName, userId) {
-    console.log(
-      `🚀 Starting fresh container for updated project: ${projectName}`
-    );
-
-    try {
-      const { ProjectModel, FileModel } = getModels();
-
-      if (!ProjectModel || !FileModel) {
-        console.log(`   ⚠️  Database not available, skipping fresh container`);
-        return;
-      }
-
-      // Find project in database
-      const dbProject = await ProjectModel.findOne({
-        name: projectName,
-        owner: userId,
-      }).lean();
-
-      if (!dbProject) {
-        // Try without userId
-        const dbProjectAny = await ProjectModel.findOne({
-          name: projectName,
-        }).lean();
-        if (!dbProjectAny) {
-          console.log(`   ⚠️  Project ${projectName} not found in database`);
-          return;
-        }
-      }
-
-      const project =
-        dbProject || (await ProjectModel.findOne({ name: projectName }).lean());
-
-      // Generate unique terminal ID for this fresh container
-      const freshTerminalId = `fresh-${projectName}-${Date.now()}`;
-
-      console.log(`   🆔 Fresh terminal ID: ${freshTerminalId}`);
-      console.log(`   📁 Project: ${project.name} (${project._id})`);
-
-      // Initialize fresh session (this will create temp dir with latest files)
-      const session = await this.initializeTerminalSession(
-        freshTerminalId,
-        project.name,
-        String(project.owner)
-      );
-
-      console.log(`   ✅ Fresh session created with latest files`);
-      console.log(`   📂 Fresh temp dir: ${session.tempDir}`);
-
-      // Start web server on new port
-      const webResult = await this.startWebServer(freshTerminalId);
-
-      if (webResult.code === 0) {
-        console.log(`   🌐 Fresh container serving updated files!`);
-        console.log(`   🔗 New URL: ${webResult.url}`);
-
-        // Store the fresh URL info (could be used by frontend)
-        session.freshUrl = webResult.url;
-        session.isFreshContainer = true;
-
-        return {
-          success: true,
-          url: webResult.url,
-          port: webResult.webPort,
-          terminalId: freshTerminalId,
-        };
-      } else {
-        console.log(`   ❌ Fresh web server failed: ${webResult.error}`);
-        // Clean up session if web server failed
-        await this.cleanupSession(freshTerminalId);
-        return { success: false, error: webResult.error };
-      }
-    } catch (error) {
-      console.error(`   ❌ Fresh container creation failed: ${error.message}`);
-      return { success: false, error: error.message };
-    }
   }
 }
 

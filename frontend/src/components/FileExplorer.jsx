@@ -57,8 +57,17 @@ const FileExplorer = ({
       if (!data || data.projectName !== (project.name || project.id)) return;
       loadFileTree();
     };
+    const onTreeUpdate = (data) => {
+      if (!data || data.projectName !== (project.name || project.id)) return;
+      console.log("File tree update received from terminal:", data);
+      loadFileTree();
+    };
     socket.on("file-updated", onUpdated);
-    return () => socket.off("file-updated", onUpdated);
+    socket.on("file-tree-update", onTreeUpdate);
+    return () => {
+      socket.off("file-updated", onUpdated);
+      socket.off("file-tree-update", onTreeUpdate);
+    };
   }, [socket, project]);
 
   const loadFileTree = async () => {

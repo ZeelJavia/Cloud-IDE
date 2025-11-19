@@ -67,27 +67,7 @@ const MenuBar = ({
     }
   };
 
-  const checkTools = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const data = await api.checkTools(token);
-      const tools = data.tools || {};
-      const missing = Object.entries(tools)
-        .filter(([_, v]) => !v.available)
-        .map(([k]) => k);
-      const ok = Object.entries(tools)
-        .filter(([_, v]) => v.available)
-        .slice(0, 6)
-        .map(([k, v]) => `${k}: ${v.version}`)
-        .join(" | ");
-      if (missing.length) {
-        toast.warn(`Missing: ${missing.join(", ")}`);
-      }
-      toast.info(ok || "No tools detected");
-    } catch (e) {
-      toast.error(e.message || String(e));
-    }
-  };
+
 
   return (
     <>

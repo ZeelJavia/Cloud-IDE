@@ -191,16 +191,7 @@ export const api = {
     );
     return handle(resp);
   },
-  // Terminal HTTP fallback
-  async execCommand(command, workingDirectory, token) {
-    const API_BASE = getApiBase();
-    const resp = await fetch(`${API_BASE}/api/terminal/execute`, {
-      method: "POST",
-      headers: getHeaders(token),
-      body: JSON.stringify({ command, workingDirectory }),
-    });
-    return handle(resp);
-  },
+
   // Run a file (HTTP)
   async runFile(
     { projectName, filePath, args = [], timeoutSec = 20, stdinText },
@@ -237,14 +228,6 @@ export const api = {
       method: "POST",
       headers: getHeaders(token),
       body: JSON.stringify({ prompt }),
-    });
-    return handle(resp);
-  },
-  // Tools check
-  async checkTools(token) {
-    const API_BASE = getApiBase();
-    const resp = await fetch(`${API_BASE}/api/tools/check`, {
-      headers: getHeaders(token),
     });
     return handle(resp);
   },

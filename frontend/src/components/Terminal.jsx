@@ -296,12 +296,111 @@ const Terminal = ({ socket, project, user }) => {
         setIsExecuting(false);
       });
 
+      // Handle container auto-recovery
+      socket.on("container-recovered", (data) => {
+        const { terminalId, message, timestamp } = data;
+        setOutput((prev) => ({
+          ...prev,
+          [terminalId]: [
+            ...(prev[terminalId] || []),
+            {
+              type: "recovery",
+              content: `🔄 Container Auto-Recovery: ${message}`,
+              timestamp: timestamp || new Date().toISOString(),
+            },
+          ],
+        }));
+
+        // Update terminal state to show recovery
+        setTerminalStates((prev) => {
+          const prevState = prev[terminalId] || {};
+          return {
+            ...prev,
+            [terminalId]: {
+              ...prevState,
+              lastRecovered: new Date().toISOString(),
+              status: 'recovered',
+            },
+          };
+        });
+
+        // Clear the recovery indicator after 10 seconds
+        setTimeout(() => {
+          setTerminalStates((prev) => {
+            const prevState = prev[terminalId] || {};
+            if (prevState.status === 'recovered') {
+              return {
+                ...prev,
+                [terminalId]: {
+                  ...prevState,
+                  status: 'normal',
+                },
+              };
+            }
+            return prev;
+          });
+        }, 10000);
+      });
+
+      // Handle terminal errors (including session invalid)
+      socket.on("terminal-error", (data) => {
+        const { terminalId, error, timestamp } = data;
+        setOutput((prev) => ({
+          ...prev,
+          [terminalId]: [
+            ...(prev[terminalId] || []),
+            {
+              type: "error",
+              content: `❌ Terminal Error: ${error}`,
+              timestamp: timestamp || new Date().toISOString(),
+            },
+          ],
+        }));
+      });
+
+      // Handle session invalidation (when auto-recovery is not possible)
+      socket.on("session-invalid", (data) => {
+        const { terminalId, reason, message } = data;
+        setOutput((prev) => ({
+          ...prev,
+          [terminalId]: [
+            ...(prev[terminalId] || []),
+            {
+              type: "warning",
+              content: `⚠️ Session Invalid: ${message}`,
+              timestamp: new Date().toISOString(),
+            },
+            {
+              type: "system",
+              content: `🔧 Please restart this terminal to continue.`,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+
+        // Mark terminal as requiring restart
+        setTerminalStates((prev) => {
+          const prevState = prev[terminalId] || {};
+          return {
+            ...prev,
+            [terminalId]: {
+              ...prevState,
+              status: 'needs-restart',
+              invalidReason: reason,
+            },
+          };
+        });
+      });
+
       return () => {
         socket.off("terminal-output");
         socket.off("command-completed");
         socket.off("container-ready");
         socket.off("web-project-ready");
         socket.off("file-updated");
+        socket.off("container-recovered");
+        socket.off("terminal-error");
+        socket.off("session-invalid");
       };
     }
   }, [socket, activeTerminal, project]);
@@ -1226,26 +1325,41 @@ const Terminal = ({ socket, project, user }) => {
           <span>Terminal</span>
         </div>
         <div className="terminal-tabs">
-          {terminals.map((terminal) => (
-            <div
-              key={terminal.id}
-              className={`terminal-tab ${
-                activeTerminal?.id === terminal.id ? "active" : ""
-              }`}
-              onClick={() => setActiveTerminal(terminal)}
-            >
-              <span>{terminal.name}</span>
-              <button
-                className="terminal-tab-close"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTerminal(terminal.id);
-                }}
+          {terminals.map((terminal) => {
+            const terminalState = terminalStates[terminal.id] || {};
+            const isRecovered = terminalState.status === 'recovered';
+            const needsRestart = terminalState.status === 'needs-restart';
+            
+            return (
+              <div
+                key={terminal.id}
+                className={`terminal-tab ${
+                  activeTerminal?.id === terminal.id ? "active" : ""
+                } ${isRecovered ? "recovered" : ""} ${needsRestart ? "needs-restart" : ""}`}
+                onClick={() => setActiveTerminal(terminal)}
+                title={
+                  isRecovered ? "Container auto-recovered" :
+                  needsRestart ? "Session invalid - restart required" :
+                  terminal.name
+                }
               >
-                <FiX size={12} />
-              </button>
-            </div>
-          ))}
+                <span className="terminal-tab-name">
+                  {isRecovered && <span className="status-indicator recovered">🔄</span>}
+                  {needsRestart && <span className="status-indicator warning">⚠️</span>}
+                  {terminal.name}
+                </span>
+                <button
+                  className="tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTerminal(terminal.id);
+                  }}
+                >
+                  <FiX size={12} />
+                </button>
+              </div>
+            );
+          })}
         </div>
         <div className="terminal-actions">
           <button className="terminal-action" onClick={createNewTerminal}>

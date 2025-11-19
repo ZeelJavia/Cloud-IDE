@@ -32,10 +32,7 @@ const socketHandlers = require("./socket/socketHandlers");
 
 // Import utilities
 const { checkTool } = require("./utils/validationUtils");
-const {
-  cleanupWarmContainers,
-  prePullDockerImages,
-} = require("./utils/dockerUtils");
+const { cleanupWarmContainers } = require("./utils/dockerUtils");
 
 const app = express();
 const morgan = require("morgan");
@@ -221,31 +218,6 @@ app.get("/api/debug/web-asset", (req, res) => {
   res.json({ projectName, dir, path: p, abs, exists: ok });
 });
 
-app.get("/api/debug/container-sessions", (req, res) => {
-  try {
-    const sessions = containerTerminal.listSessions();
-    res.json({ sessions });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/debug/web-container", async (req, res) => {
-  try {
-    const tid = req.query.terminalId;
-    if (!tid) return res.status(400).json({ error: "terminalId required" });
-    const info = containerTerminal.getWebInfo(tid);
-    if (!info) return res.status(404).json({ error: "not found" });
-    const logs = await containerTerminal.getWebLogs(
-      tid,
-      Number(req.query.tail || 200)
-    );
-    res.json({ info, logs: logs.logs, code: logs.code });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // Simple upload storage
 const upload = multer({ dest: config.getUploadsDir() });
 
@@ -272,89 +244,9 @@ app.post(
   }
 );
 
-// HTTP fallback terminal execution for environments without sockets
-app.post("/api/terminal/execute", authenticateToken, async (req, res) => {
-  try {
-    const { command, workingDirectory } = req.body || {};
-    if (!command) return res.status(400).json({ error: "command required" });
-
-    const isWin = process.platform === "win32";
-    const { spawn } = require("child_process");
-    const path = require("path");
-    const fs = require("fs");
-
-    // Resolve working directory under projects dir
-    let cwd = config.getProjectsDir();
-    try {
-      if (typeof workingDirectory === "string" && workingDirectory.length) {
-        const candidate = path.isAbsolute(workingDirectory)
-          ? workingDirectory
-          : path.join(config.getProjectsDir(), workingDirectory);
-        const resolved = path.resolve(candidate);
-        if (
-          resolved.startsWith(path.resolve(config.getProjectsDir())) &&
-          fs.existsSync(resolved)
-        ) {
-          cwd = resolved;
-        }
-      }
-    } catch {}
-
-    const shell = isWin ? "powershell.exe" : "/bin/bash";
-    const shellArgs = isWin
-      ? [
-          "-NoLogo",
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-Command",
-          command,
-        ]
-      : ["-lc", command];
-
-    const child = spawn(shell, shellArgs, { cwd, env: process.env });
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (d) => (stdout += d.toString()));
-    child.stderr.on("data", (d) => (stderr += d.toString()));
-    child.on("close", (code) => {
-      res.json({ code: code ?? 0, stdout, stderr });
-    });
-    child.on("error", (e) => {
-      res.status(500).json({ error: e.message });
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // Container management endpoints (temporary - should be moved to controller later)
 const ContainerService = require("./services/containerService");
 const containerTerminal = new ContainerService();
-
-app.get("/api/containers", authenticateToken, async (req, res) => {
-  try {
-    const containers = containerTerminal.getUserContainers(req.user.id);
-    res.json({ containers });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post(
-  "/api/containers/:projectName/sync",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const { projectName } = req.params;
-      await containerTerminal.syncProjectFiles(projectName, req.user.id);
-      res.json({ success: true, message: "Project files synced to container" });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-);
 
 // Single file sync endpoint (for DB-backed mode real-time updates)
 app.post(
@@ -414,39 +306,33 @@ app.post("/api/debug/start-web", async (req, res) => {
   }
 });
 
-// Check tools endpoint
-app.get("/api/tools/check", async (req, res) => {
+// Debug-only: restart containers for a project
+app.post("/api/debug/restart-containers", async (req, res) => {
   try {
-    const isWin = process.platform === "win32";
-    const results = {};
-    async function add(name, cmd, args) {
-      results[name] = await checkTool(cmd, args);
-    }
-    await add("node", "node", ["-v"]);
-    await add("npm", "npm", ["-v"]);
-    await add("python", "python", ["--version"]);
-    await add("g++", "g++", ["--version"]);
-    await add("gcc", "gcc", ["--version"]);
-    await add("javac", "javac", ["-version"]);
-    await add("java", "java", ["-version"]);
-    await add("go", "go", ["version"]);
-    await add("rustc", "rustc", ["--version"]);
-    await add("php", "php", ["-v"]);
-    await add("ruby", "ruby", ["-v"]);
-    await add("swift", "swift", ["--version"]);
-    await add("kotlinc", "kotlinc", ["-version"]);
-    await add("scala", "scala", ["-version"]);
-    await add("docker", "docker", ["--version"]);
-    if (isWin) {
-      results["powershell"] = await checkTool("powershell.exe", [
-        "-NoProfile",
-        "-Command",
-        "$PSVersionTable.PSVersion.ToString()",
-      ]);
-    } else {
-      await add("bash", "bash", ["--version"]);
-    }
-    res.json({ tools: results });
+    const { projectName, userId } = req.body || {};
+    if (!projectName)
+      return res.status(400).json({ error: "projectName required" });
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    console.log(
+      `🔄 Manual container restart requested for project: ${projectName}`
+    );
+    const restartedSessions =
+      await containerTerminal.autoRestartProjectContainers(
+        projectName,
+        userId,
+        "manual restart",
+        io // Pass io for socket notifications
+      );
+
+    res.json({
+      success: true,
+      restartedSessions: restartedSessions.length,
+      details: restartedSessions.map((s) => ({
+        terminalId: s.terminalId,
+        webServerRestarted: s.webServerRestarted,
+      })),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -558,6 +444,37 @@ async function start() {
     process.exit(1);
   }
 }
+
+// Graceful shutdown handling
+process.on("SIGINT", () => {
+  console.log("\n🛑 Received SIGINT, gracefully shutting down...");
+
+  // Save container state before shutdown
+  if (containerTerminal && typeof containerTerminal.saveState === "function") {
+    containerTerminal.saveState();
+    console.log("💾 Container state saved");
+  }
+
+  server.close(() => {
+    console.log("✅ Server closed");
+    process.exit(0);
+  });
+});
+
+process.on("SIGTERM", () => {
+  console.log("\n🛑 Received SIGTERM, gracefully shutting down...");
+
+  // Save container state before shutdown
+  if (containerTerminal && typeof containerTerminal.saveState === "function") {
+    containerTerminal.saveState();
+    console.log("💾 Container state saved");
+  }
+
+  server.close(() => {
+    console.log("✅ Server closed");
+    process.exit(0);
+  });
+});
 
 // Start the server
 start();

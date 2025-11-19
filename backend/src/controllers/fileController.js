@@ -1,6 +1,7 @@
 /**
  * File Controller - Manages file operations, content serving, and tree structure
  */
+const fileService = require("../services/fileService");
 
 class FileController {
   async getFileContent(req, res) {
