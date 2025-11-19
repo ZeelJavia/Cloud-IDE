@@ -1,36 +1,103 @@
 # ==============================================
-# DevDock Project .gitignore
+# DevDock - Cloud Native Developer Workspace
+# MERN Stack Project .gitignore
 # ==============================================
 
+# ==============================================
+# Dependencies
+# ==============================================
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ==============================================
+# Production Builds
+# ==============================================
+dist/
+build/
+*/dist/
+*/build/
+.next/
+.nuxt/
+.vercel/
+.turbo/
+out/
+
+# ==============================================
 # Environment Variables
+# ==============================================
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+backend/.env
+frontend/.env
 
 # ==============================================
-# Database & Backup Files
+# Package Manager Files
 # ==============================================
-db-backup/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*/package-lock.json
+*/yarn.lock
+*/pnpm-lock.yaml
+.pnpm-store/
+
+# ==============================================
+# Database & Runtime Files
+# ==============================================
 *.db
 *.sqlite
 *.sqlite3
 dump.rdb
 mongodb_data/
+.mongodb/
 
 # ==============================================
-# Project Documentation (Keep Local)
+# Backend Uploads & Sessions
 # ==============================================
-info.txt
-project_info.txt
-web-info.txt
-GOOGLE_OAUTH_GUIDE.md
-OAUTH_SETUP.md
+backend/uploads/
+backend/sessions/
+backend/.sessions/
+backend/public/uploads/
+uploads/
+sessions/
 
-# Test Data Files
-test-*.json
-*.test.json
+# ==============================================
+# Project Runtime Files
+# ==============================================
+backend/projects/
+backend/src/projects/
+*.pid
+*.seed
+*.pid.lock
+
+# ==============================================
+# Logs & Debug Files
+# ==============================================
+logs/
+*.log
+backend/*.log
+frontend/*.log
+debug.log
+error.log
+
+# ==============================================
+# Cache & Temporary Files
+# ==============================================
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vite/
+.eslintcache
+.stylelintcache
 
 # ==============================================
 # IDE & Editor Files
@@ -40,81 +107,8 @@ test-*.json
 *.swp
 *.swo
 *~
-.DS_Store
-Thumbs.db
-
-# ==============================================
-# Logs
-# ==============================================
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
-
-# ==============================================
-# Runtime & Temporary Files
-# ==============================================
-*.pid
-*.seed
-*.pid.lock
-lib-cov/
-.grunt/
-.lock-wscript/
-.wafpickle-*
-.node_repl_history
-*.tgz
-.yarn-integrity
-
-# ==============================================
-# Docker & Container Files
-# ==============================================
-.docker/
-docker-compose.override.yml
-.dockerignore
-
-# ==============================================
-# Package Manager Files
-# ==============================================
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-.pnpm-store/
-
-# ==============================================
-# Frontend Specific
-# ==============================================
-.cache/
-.parcel-cache/
-.nuxt/
-.next/
-.vercel/
-.turbo/
-
-# ==============================================
-# Backend Specific
-# ==============================================
-uploads/
-sessions/
-.sessions/
-public/uploads/
-
-# ==============================================
-# SSL Certificates (if any)
-# ==============================================
-*.pem
-*.key
-*.crt
-*.p12
-
-# ==============================================
-# Backup Files
-# ==============================================
-backup-*.js
-*.backup
-*.bak
+*.sublime-project
+*.sublime-workspace
 
 # ==============================================
 # OS Generated Files
@@ -126,20 +120,27 @@ backup-*.js
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
 # ==============================================
-# Development Tools
+# Docker & Container Files
 # ==============================================
-.eslintrc.js
-.eslintrc.cjs
-.prettierrc
-.prettierrc.js
-.prettierrc.json
-.stylelintrc.js
-.commitlintrc.js
+.docker/
+docker-compose.override.yml
+.dockerignore
 
 # ==============================================
-# Archives
+# SSL & Security Files
+# ==============================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ==============================================
+# Archive Files
 # ==============================================
 *.7z
 *.dmg
@@ -151,10 +152,44 @@ Thumbs.db
 *.zip
 
 # ==============================================
-# Keep these files (explicitly track)
+# Testing & Coverage
+# ==============================================
+coverage/
+.nyc_output/
+.coverage/
+
+# ==============================================
+# Local Development Files
+# ==============================================
+info.txt
+project_info.txt
+web-info.txt
+test-*.json
+*.test.json
+backup-*.js
+*.backup
+*.bak
+
+# ==============================================
+# Documentation (Optional - Keep Local)
+# ==============================================
+GOOGLE_OAUTH_GUIDE.md
+OAUTH_SETUP.md
+Instructions*.pdf
+
+# ==============================================
+# Submission Folder (Generated)
+# ==============================================
+submission/
+
+# ==============================================
+# Keep Important Files
 # ==============================================
 !.env.example
+!backend/.env.example
+!frontend/.env.example
 !.gitignore
 !README.md
 !package.json
 !*/package.json
+!.gitkeep
