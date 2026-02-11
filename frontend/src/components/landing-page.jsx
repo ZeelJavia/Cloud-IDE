@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/theme-context.jsx";
 
-export function LandingPage({ onGetStarted, onLogin }) {
+export function LandingPage({ onGetStarted, onGoToEditor, isAuthenticated, user }) {
   const [isVisible, setIsVisible] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const { theme, setTheme } = useTheme();
@@ -120,117 +120,197 @@ export function LandingPage({ onGetStarted, onLogin }) {
       </div>
 
       <section className="relative min-h-screen flex items-center justify-center px-4 py-20">
-        <div
-          className={`max-w-6xl mx-auto text-center transition-all duration-1000 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          <Badge
-            variant="secondary"
-            className="mb-6 px-4 py-2 text-sm font-medium lp-glass lp-animate-pulse-glow text-foreground"
+        {isAuthenticated && user ? (
+          // Welcome message for authenticated users
+          <div
+            className={`max-w-4xl mx-auto text-center transition-all duration-1000 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
           >
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI-Powered Development
-          </Badge>
-          <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold mb-6 text-balance">
-            Cloud Native
-            <span className="block bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]">
-              Developer Workspace
-            </span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto text-pretty">
-            Code, collaborate, and create in the cloud. Your complete
-            development environment powered by AI, accessible from anywhere.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4 mb-12">
-            {[
-              { icon: <Zap className="w-4 h-4" />, text: "Instant Setup" },
-              { icon: <Sparkles className="w-4 h-4" />, text: "AI-Powered" },
-              { icon: <Globe className="w-4 h-4" />, text: "Browser-Based" },
-              {
-                icon: <Globe className="w-4 h-4" />,
-                text: "Live Web Preview",
-              },
-            ].map((feature, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 px-4 py-2 rounded-full lp-glass text-sm font-medium lp-hover-lift lp-animate-slide-in-up"
-                style={{ animationDelay: `${index * 0.1}s` }}
+            <Badge
+              variant="secondary"
+              className="mb-6 px-4 py-2 text-sm font-medium lp-glass lp-animate-pulse-glow text-foreground"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Welcome Back!
+            </Badge>
+            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
+              Welcome back,
+              <span className="block bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]">
+                {user.name || 'Developer'}!
+              </span>
+            </h1>
+            <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto text-pretty">
+              You've successfully authenticated with Google OAuth. Your cloud development workspace is ready to go!
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+              <Button
+                size="lg"
+                className="px-8 py-4 text-lg font-semibold rounded-full bg-gradient-to-r from-primary to-accent hover:shadow-2xl hover:shadow-primary/25 transition-all duration-300 group lp-hover-lift"
+                onClick={onGoToEditor}
               >
-                {feature.icon}
-                {feature.text}
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Button
-              size="lg"
-              className="px-8 py-4 text-lg font-semibold rounded-full bg-gradient-to-r from-primary to-accent hover:shadow-2xl hover:shadow-primary/25 transition-all duration-300 group lp-hover-lift"
-              onClick={onGetStarted}
-            >
-              Get Started Free
-              <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              className="px-8 py-4 text-lg font-semibold rounded-full lp-glass hover:bg-muted/50 transition-all duration-300 bg-transparent lp-hover-lift"
-              onClick={() => {
-                const el = document.getElementById("features");
-                el?.scrollIntoView({
-                  behavior: "smooth",
-                  block: "start",
-                  inline: "nearest",
-                });
-              }}
-            >
-              Learn More
-            </Button>
-          </div>
-          <div className="relative max-w-4xl mx-auto">
-            <Card className="lp-glass border-2 border-primary/20 shadow-2xl shadow-primary/10 lp-hover-lift">
-              <CardContent className="p-8">
-                <div className="bg-gradient-to-br from-muted/50 to-background rounded-lg p-6 font-mono text-sm">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 rounded-full bg-destructive"></div>
-                    <div className="w-3 h-3 rounded-full bg-accent"></div>
-                    <div className="w-3 h-3 rounded-full bg-primary"></div>
-                    <span className="ml-4 text-muted-foreground">
-                      workspace.ts
-                    </span>
+                Open IDE Workspace
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="px-8 py-4 text-lg font-semibold rounded-full lp-glass hover:bg-muted/50 transition-all duration-300 bg-transparent lp-hover-lift"
+                onClick={() => {
+                  const el = document.getElementById("features");
+                  el?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                    inline: "nearest",
+                  });
+                }}
+              >
+                Explore Features
+              </Button>
+            </div>
+            <div className="relative max-w-4xl mx-auto">
+              <Card className="lp-glass border-2 border-green-500/20 shadow-2xl shadow-green-500/10 lp-hover-lift">
+                <CardContent className="p-8">
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="text-green-500 font-semibold">Authentication Successful</span>
                   </div>
-                  <div className="space-y-2 text-left">
-                    <div>
-                      <span className="lp-syntax-keyword">import</span>{" "}
-                      <span className="lp-syntax-variable">
-                        {"{ CloudIDE }"}
-                      </span>{" "}
-                      <span className="lp-syntax-keyword">from</span>{" "}
-                      <span className="lp-syntax-string">
-                        '@ai-workspace/core'
+                  <div className="bg-gradient-to-br from-muted/50 to-background rounded-lg p-6 font-mono text-sm">
+                    <div className="space-y-2 text-left">
+                      <div>
+                        <span className="lp-syntax-comment">// Authentication Details</span>
+                      </div>
+                      <div>
+                        <span className="lp-syntax-keyword">const</span>{" "}
+                        <span className="lp-syntax-variable">user</span> = {"{"}
+                      </div>
+                      <div className="ml-4">
+                        <span className="lp-syntax-property">name:</span>{" "}
+                        <span className="lp-syntax-string">"{user.name || 'Developer'}"</span>,
+                      </div>
+                      <div className="ml-4">
+                        <span className="lp-syntax-property">email:</span>{" "}
+                        <span className="lp-syntax-string">"{user.email || 'user@example.com'}"</span>,
+                      </div>
+                      <div className="ml-4">
+                        <span className="lp-syntax-property">provider:</span>{" "}
+                        <span className="lp-syntax-string">"{user.provider || 'google'}"</span>
+                      </div>
+                      <div>{"}"}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          // Original landing content for non-authenticated users
+          <div
+            className={`max-w-6xl mx-auto text-center transition-all duration-1000 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
+          >
+            <Badge
+              variant="secondary"
+              className="mb-6 px-4 py-2 text-sm font-medium lp-glass lp-animate-pulse-glow text-foreground"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              AI-Powered Development
+            </Badge>
+            <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold mb-6 text-balance">
+              Cloud Native
+              <span className="block bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]">
+                Developer Workspace
+              </span>
+            </h1>
+            <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto text-pretty">
+              Code, collaborate, and create in the cloud. Your complete
+              development environment powered by AI, accessible from anywhere.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4 mb-12">
+              {[
+                { icon: <Zap className="w-4 h-4" />, text: "Instant Setup" },
+                { icon: <Sparkles className="w-4 h-4" />, text: "AI-Powered" },
+                { icon: <Globe className="w-4 h-4" />, text: "Browser-Based" },
+                {
+                  icon: <Globe className="w-4 h-4" />,
+                  text: "Live Web Preview",
+                },
+              ].map((feature, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full lp-glass text-sm font-medium lp-hover-lift lp-animate-slide-in-up"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  {feature.icon}
+                  {feature.text}
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+              <Button
+                size="lg"
+                className="px-8 py-4 text-lg font-semibold rounded-full bg-gradient-to-r from-primary to-accent hover:shadow-2xl hover:shadow-primary/25 transition-all duration-300 group lp-hover-lift"
+                onClick={onGetStarted}
+              >
+                Get Started Free
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="px-8 py-4 text-lg font-semibold rounded-full lp-glass hover:bg-muted/50 transition-all duration-300 bg-transparent lp-hover-lift"
+                onClick={onGoToEditor}
+              >
+                Go to Editor
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </div>
+            <div className="relative max-w-4xl mx-auto">
+              <Card className="lp-glass border-2 border-primary/20 shadow-2xl shadow-primary/10 lp-hover-lift">
+                <CardContent className="p-8">
+                  <div className="bg-gradient-to-br from-muted/50 to-background rounded-lg p-6 font-mono text-sm">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-3 h-3 rounded-full bg-destructive"></div>
+                      <div className="w-3 h-3 rounded-full bg-accent"></div>
+                      <div className="w-3 h-3 rounded-full bg-primary"></div>
+                      <span className="ml-4 text-muted-foreground">
+                        workspace.ts
                       </span>
                     </div>
-                    <div>
-                      <span className="lp-syntax-keyword">const</span>{" "}
-                      <span className="lp-syntax-variable">workspace</span> ={" "}
-                      <span className="lp-syntax-keyword">new</span>{" "}
-                      <span className="lp-syntax-function">CloudIDE</span>()
-                    </div>
-                    <div>
-                      <span className="lp-syntax-variable">workspace</span>.
-                      <span className="lp-syntax-function">enableAI</span>()
-                    </div>
-                    <div>
-                      <span className="lp-syntax-variable">workspace</span>.
-                      <span className="lp-syntax-function">collaborate</span>(
-                      <span className="lp-syntax-string">'team'</span>)
+                    <div className="space-y-2 text-left">
+                      <div>
+                        <span className="lp-syntax-keyword">import</span>{" "}
+                        <span className="lp-syntax-variable">
+                          {"{ CloudIDE }"}
+                        </span>{" "}
+                        <span className="lp-syntax-keyword">from</span>{" "}
+                        <span className="lp-syntax-string">
+                          '@ai-workspace/core'
+                        </span>
+                      </div>
+                      <div>
+                        <span className="lp-syntax-keyword">const</span>{" "}
+                        <span className="lp-syntax-variable">workspace</span> ={" "}
+                        <span className="lp-syntax-keyword">new</span>{" "}
+                        <span className="lp-syntax-function">CloudIDE</span>()
+                      </div>
+                      <div>
+                        <span className="lp-syntax-variable">workspace</span>.
+                        <span className="lp-syntax-function">enableAI</span>()
+                      </div>
+                      <div>
+                        <span className="lp-syntax-variable">workspace</span>.
+                        <span className="lp-syntax-function">collaborate</span>(
+                        <span className="lp-syntax-string">'team'</span>)
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <section id="features" className="py-24 px-4">
@@ -298,9 +378,10 @@ export function LandingPage({ onGetStarted, onLogin }) {
                   variant="outline"
                   size="lg"
                   className="px-8 py-4 text-lg font-semibold rounded-full lp-glass bg-transparent lp-hover-lift"
-                  onClick={onLogin}
+                  onClick={onGoToEditor}
                 >
-                  Sign In
+                  Go to Editor
+                  <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </div>
             </CardContent>

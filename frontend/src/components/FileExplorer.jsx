@@ -11,7 +11,7 @@ import {
   FiEdit3,
 } from "react-icons/fi";
 import { VscNewFile, VscNewFolder } from "react-icons/vsc";
-import { api } from "../lib/api";
+import { api, tokenManager } from "../lib/api";
 import "./FileExplorer.css";
 
 /**
@@ -76,8 +76,7 @@ const FileExplorer = ({
     try {
       setLoading(true);
       const projectName = typeof project === "string" ? project : project.name;
-      const token = localStorage.getItem("token");
-      const tree = await api.getTree(projectName, token);
+      const tree = await api.getTree(projectName);
       setFileTree(tree);
     } catch (error) {
       console.error("Error loading file tree:", error);

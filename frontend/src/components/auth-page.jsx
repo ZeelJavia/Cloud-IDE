@@ -1,6 +1,6 @@
 import { useState } from "react";
 import "./auth-page.css"; // Component-scoped styles
-import { api } from "@/lib/api.js";
+import { api, tokenManager } from "@/lib/api.js";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,6 @@ import {
   EyeOff,
   ArrowLeft,
   Sparkles,
-  Github,
   Chrome,
   Code,
   Star,
@@ -67,9 +66,9 @@ export function AuthPage({ onLogin, onBackToHome }) {
       }
       const { token, user } = data;
       if (token && user) {
-        localStorage.setItem("token", token);
-        localStorage.setItem("user", JSON.stringify(user));
-        onLogin(user);
+        tokenManager.setToken(token);
+        // Pass user data with token included
+        onLogin({ ...user, token });
       } else {
         throw new Error("Invalid response from server");
       }
@@ -86,17 +85,6 @@ export function AuthPage({ onLogin, onBackToHome }) {
 
   const handleGoogleAuth = () => {
     window.location.href = api.googleLoginUrl();
-  };
-
-  const handleGithubAuth = () => {
-    const user = {
-      id: "github-user-" + Date.now(),
-      name: "GitHub User",
-      email: "user@github.com",
-    };
-    localStorage.setItem("token", "github-token-" + Date.now());
-    localStorage.setItem("user", JSON.stringify(user));
-    onLogin(user);
   };
 
   return (
@@ -348,26 +336,15 @@ export function AuthPage({ onLogin, onBackToHome }) {
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGoogleAuth}
-                    className="ap-glass ap-hover-lift bg-transparent"
-                  >
-                    <Chrome className="w-4 h-4 mr-2" />
-                    Google
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGithubAuth}
-                    className="ap-glass ap-hover-lift bg-transparent"
-                  >
-                    <Github className="w-4 h-4 mr-2" />
-                    GitHub
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGoogleAuth}
+                  className="w-full ap-glass ap-hover-lift bg-transparent"
+                >
+                  <Chrome className="w-4 h-4 mr-2" />
+                  Google
+                </Button>
                 {isLogin && (
                   <div className="text-center">
                     <button

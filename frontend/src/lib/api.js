@@ -1,6 +1,21 @@
 // Centralized API client for frontend -> backend calls
 // Unified API base URL detection system
 
+// In-memory token storage to replace localStorage
+let authToken = null;
+
+export const tokenManager = {
+  setToken(token) {
+    authToken = token;
+  },
+  getToken() {
+    return authToken;
+  },
+  clearToken() {
+    authToken = null;
+  }
+};
+
 const DEV =
   typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 
@@ -30,7 +45,9 @@ function getApiBase() {
 
 function getHeaders(token, extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
-  if (token) h.Authorization = `Bearer ${token}`;
+  // Use provided token or fall back to stored token
+  const tokenToUse = token || authToken;
+  if (tokenToUse) h.Authorization = `Bearer ${tokenToUse}`;
   return h;
 }
 
@@ -83,19 +100,28 @@ export const api = {
     });
     return handle(resp);
   },
+  async updateProfile(profileData, token) {
+    const API_BASE = getApiBase();
+    const resp = await fetch(`${API_BASE}/api/auth/profile`, {
+      method: "PUT",
+      headers: getHeaders(token),
+      body: JSON.stringify(profileData),
+    });
+    return handle(resp);
+  },
   googleLoginUrl() {
     const API_BASE = getApiBase();
     return `${API_BASE}/api/auth/google`;
   },
   // Projects
-  async listProjects(token) {
+  async listProjects(token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(`${API_BASE}/api/projects`, {
       headers: getHeaders(token),
     });
     return handle(resp); // array of names
   },
-  async createProject(name, token) {
+  async createProject(name, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(`${API_BASE}/api/projects`, {
       method: "POST",
@@ -104,7 +130,7 @@ export const api = {
     });
     return handle(resp);
   },
-  async deleteProject(projectName, token) {
+  async deleteProject(projectName, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(projectName)}`,
@@ -116,7 +142,7 @@ export const api = {
     return handle(resp);
   },
   // Files
-  async getTree(projectName, token) {
+  async getTree(projectName, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(projectName)}/files`,
@@ -126,7 +152,7 @@ export const api = {
     );
     return handle(resp); // array of nodes
   },
-  async readFile(projectName, filePath, token) {
+  async readFile(projectName, filePath, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(
@@ -138,7 +164,7 @@ export const api = {
     );
     return handle(resp); // { content, size, modified, language }
   },
-  async saveFile(projectName, filePath, content, token) {
+  async saveFile(projectName, filePath, content, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(
@@ -152,7 +178,7 @@ export const api = {
     );
     return handle(resp);
   },
-  async createEntry(projectName, filePath, type = "file", content = "", token) {
+  async createEntry(projectName, filePath, type = "file", content = "", token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(projectName)}/files`,
@@ -164,7 +190,7 @@ export const api = {
     );
     return handle(resp);
   },
-  async deleteEntry(projectName, filePath, token) {
+  async deleteEntry(projectName, filePath, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(
@@ -177,7 +203,7 @@ export const api = {
     );
     return handle(resp);
   },
-  async renameEntry(projectName, oldPath, newName, token) {
+  async renameEntry(projectName, oldPath, newName, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(
       `${API_BASE}/api/projects/${encodeURIComponent(
@@ -212,7 +238,7 @@ export const api = {
     return handle(resp);
   },
   // AI chat
-  async aiChat({ message, history = [], context }, token) {
+  async aiChat({ message, history = [], context }, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(`${API_BASE}/api/ai/chat`, {
       method: "POST",
@@ -222,7 +248,7 @@ export const api = {
     return handle(resp);
   },
   // AI generate
-  async aiGenerate({ prompt }, token) {
+  async aiGenerate({ prompt }, token = null) {
     const API_BASE = getApiBase();
     const resp = await fetch(`${API_BASE}/api/ai/generate`, {
       method: "POST",

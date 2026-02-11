@@ -144,6 +144,13 @@
 .landing-page .lp-syntax-variable {
   color: #f59e0b;
 }
+.landing-page .lp-syntax-property {
+  color: #ec4899;
+}
+.landing-page .lp-syntax-comment {
+  color: #6b7280;
+  font-style: italic;
+}
 .dark .landing-page .lp-syntax-keyword {
   color: #a78bfa;
 }
@@ -155,6 +162,13 @@
 }
 .dark .landing-page .lp-syntax-variable {
   color: #fbbf24;
+}
+.dark .landing-page .lp-syntax-property {
+  color: #f472b6;
+}
+.dark .landing-page .lp-syntax-comment {
+  color: #9ca3af;
+  font-style: italic;
 }
 
 /* Footer */

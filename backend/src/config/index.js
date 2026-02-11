@@ -20,8 +20,8 @@ const config = {
   // Server Configuration
   PORT: process.env.PORT || 3001,
   NODE_ENV: process.env.NODE_ENV || "development",
-  // Web serving (nginx) fixed host port
-  WEB_PORT: Number(process.env.WEB_PORT || 8088),
+  // Web serving (nginx) dynamic host port
+  WEB_PORT: Number(process.env.WEB_PORT || 0),
   // For DB-backed projects, control whether to mirror files to backend/projects (off by default)
   MATERIALIZE_DB_TO_FS: String(
     process.env.MATERIALIZE_DB_TO_FS || "false"
@@ -47,7 +47,7 @@ const config = {
     process.env.OPENAI_API_KEY ||
     process.env.AI_API_KEY ||
     "",
-  AI_MODEL: process.env.AI_MODEL || "gemini-1.5-flash",
+  AI_MODEL: process.env.AI_MODEL || "gemini-2.5-flash",
 
   // Docker Configuration
   DOCKER_IMAGES:

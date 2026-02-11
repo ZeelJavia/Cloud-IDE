@@ -154,7 +154,8 @@ class FileService {
     filePath,
     content = "",
     type = "file",
-    userId
+    userId,
+    io
   ) {
     const { ProjectModel, FileModel } = getModels();
 
@@ -188,6 +189,15 @@ class FileService {
         content: type === "file" ? content : undefined,
         size: type === "file" ? Buffer.byteLength(content) : 0,
       });
+
+      if (io) {
+        io.to(projectName).emit("file-tree-update", {
+          projectName,
+          type,
+          path: filePath,
+        });
+      }
+
       return { success: true, message: `${type} created` };
     }
 
@@ -205,10 +215,19 @@ class FileService {
       }
       fs.writeFileSync(fullPath, content, "utf8");
     }
+
+    if (io) {
+      io.to(projectName).emit("file-tree-update", {
+        projectName,
+        type,
+        path: filePath,
+      });
+    }
+
     return { success: true, message: `${type} created successfully` };
   }
 
-  async deleteFileOrFolder(projectName, filePath, userId) {
+  async deleteFileOrFolder(projectName, filePath, userId, io) {
     const { ProjectModel, FileModel } = getModels();
 
     if (config.USE_DB_PROJECTS_BOOL && ProjectModel && FileModel) {
@@ -234,6 +253,15 @@ class FileService {
         });
       }
       await FileModel.deleteOne({ _id: doc._id });
+
+      if (io) {
+        io.to(projectName).emit("file-tree-update", {
+          projectName,
+          type: "delete",
+          path: filePath,
+        });
+      }
+
       return { success: true, message: "Deleted" };
     }
 
@@ -244,10 +272,19 @@ class FileService {
     if (fs.statSync(fullPath).isDirectory())
       fs.rmSync(fullPath, { recursive: true, force: true });
     else fs.unlinkSync(fullPath);
+
+    if (io) {
+      io.to(projectName).emit("file-tree-update", {
+        projectName,
+        type: "delete",
+        path: filePath,
+      });
+    }
+
     return { success: true, message: "Deleted successfully" };
   }
 
-  async renameFileOrFolder(projectName, oldPath, newName, userId) {
+  async renameFileOrFolder(projectName, oldPath, newName, userId, io) {
     const { ProjectModel, FileModel } = getModels();
 
     if (config.USE_DB_PROJECTS_BOOL && ProjectModel && FileModel) {
@@ -299,6 +336,15 @@ class FileService {
       target.name = newName;
       await target.save();
 
+      if (io) {
+        io.to(projectName).emit("file-tree-update", {
+          projectName,
+          type: "rename",
+          path: oldPath,
+          newName,
+        });
+      }
+
       return { success: true, message: "Renamed successfully" };
     }
 
@@ -312,6 +358,16 @@ class FileService {
       throw new Error("File or folder with new name already exists");
     }
     fs.renameSync(fullOldPath, fullNewPath);
+
+    if (io) {
+      io.to(projectName).emit("file-tree-update", {
+        projectName,
+        type: "rename",
+        path: oldPath,
+        newName,
+      });
+    }
+
     return { success: true, message: "Renamed successfully" };
   }
 

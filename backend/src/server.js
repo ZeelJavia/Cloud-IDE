@@ -294,7 +294,7 @@ app.post("/api/debug/start-web", async (req, res) => {
       return res.status(400).json({ error: "terminalId required" });
     const r = await containerTerminal.startWebServer(
       terminalId,
-      Number(port) || config.WEB_PORT || 8088,
+      Number(port) || 0,
       {}
     );
     const info = containerTerminal.getWebInfo(terminalId);

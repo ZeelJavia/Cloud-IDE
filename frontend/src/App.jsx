@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import { toast } from "react-toastify";
-import { api, getSocketUrl } from "./lib/api";
+import { api, getSocketUrl, tokenManager } from "./lib/api";
 import MenuBar from "./components/MenuBar";
 import FileExplorer from "./components/FileExplorer";
 import CodeEditor from "./components/CodeEditor";
@@ -28,15 +28,23 @@ const App = () => {
 
   // Handle login
   const handleLogin = (userData) => {
+    console.log('🔐 Login successful, user data:', userData);
     setUser(userData);
+    tokenManager.setToken(userData.token);
+    // Store in localStorage for session persistence
+    localStorage.setItem('token', userData.token);
+    localStorage.setItem('user', JSON.stringify(userData));
     setIsAuthenticated(true);
+    console.log('🚀 Redirecting to IDE...');
     setCurrentPage("ide");
   };
 
   // Handle logout
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    tokenManager.clearToken();
+    // Clear localStorage as well
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setUser(null);
     setIsAuthenticated(false);
     setCurrentPage("landing");
@@ -47,7 +55,12 @@ const App = () => {
 
   // Handle go to IDE from landing page
   const handleGoToIDE = () => {
-    setCurrentPage("ide");
+    if (isAuthenticated) {
+      setCurrentPage("ide");
+    } else {
+      // Redirect to auth page if not authenticated
+      setCurrentPage("auth");
+    }
   };
 
   // Handle navigation to Auth
@@ -125,27 +138,58 @@ const App = () => {
   // Initialize authentication check
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem("token");
-      const userData = localStorage.getItem("user");
-
-      if (token && userData) {
+      // First, check if we have OAuth callback parameters in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      const userParam = urlParams.get('user');
+      
+      if (token && userParam) {
         try {
-          // Verify token with backend and get fresh user data
-          const data = await api.verify(token);
-          // Use fresh user data from backend, not stale localStorage
-          const user = data.user || JSON.parse(userData);
-          // Update localStorage with fresh data
-          localStorage.setItem("user", JSON.stringify(user));
-          setUser(user);
+          // OAuth callback - user just returned from Google auth
+          const user = JSON.parse(decodeURIComponent(userParam));
+          const userWithToken = { ...user, token };
+          tokenManager.setToken(token);
+          // Store in localStorage for session persistence
+          localStorage.setItem('token', token);
+          localStorage.setItem('user', JSON.stringify(userWithToken));
+          setUser(userWithToken);
           setIsAuthenticated(true);
-          setCurrentPage("ide");
+          console.log('🔐 OAuth login successful, redirecting to IDE...');
+          setCurrentPage("ide"); // Go directly to IDE after OAuth
+          
+          // Clean up URL parameters
+          window.history.replaceState({}, '', window.location.pathname);
+          setAuthLoading(false);
+          return;
         } catch (error) {
-          console.error("Auth check failed:", error);
-          // Token invalid, clear localStorage
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
+          console.error("OAuth callback error:", error);
+          // Clear URL parameters if there was an error
+          window.history.replaceState({}, '', window.location.pathname);
         }
       }
+
+      // Check for existing session in localStorage (for development convenience)
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      
+      if (storedToken && storedUser) {
+        try {
+          // Verify token is still valid
+          const userData = JSON.parse(storedUser);
+          console.log('🔄 Restoring session for user:', userData.email || userData.name);
+          tokenManager.setToken(storedToken);
+          setUser(userData);
+          setIsAuthenticated(true);
+          console.log('🚀 Session restored, redirecting to IDE...');
+          setCurrentPage("ide");
+        } catch (error) {
+          console.error("Session restoration error:", error);
+          // Clear invalid stored data
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
+      }
+      
       setAuthLoading(false);
     };
 
@@ -156,7 +200,7 @@ const App = () => {
   useEffect(() => {
     const newSocket = io(getSocketUrl(), {
       auth: {
-        token: localStorage.getItem("token") || undefined,
+        token: tokenManager.getToken() || undefined,
       },
     });
     setSocket(newSocket);
@@ -189,8 +233,16 @@ const App = () => {
       toast.error(error.message || "An error occurred");
     });
 
+    // Listen for profile updates
+    const handleProfileUpdate = (event) => {
+      setUser(event.detail);
+    };
+
+    window.addEventListener('userProfileUpdated', handleProfileUpdate);
+
     return () => {
       newSocket.close();
+      window.removeEventListener('userProfileUpdated', handleProfileUpdate);
     };
   }, []);
 
@@ -212,27 +264,11 @@ const App = () => {
     };
   }, [socket, currentProject?.name]);
 
-  // Helper function for authenticated API calls
-  const authenticatedFetch = async (url, options = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      "Content-Type": "application/json",
-      ...options.headers,
-    };
-
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
-
   const loadProjects = async () => {
     try {
-      const token = localStorage.getItem("token");
+      // Ensure we have a valid token before making the request
+      const token = tokenManager.getToken();
+      console.log('🔐 Loading projects with token:', token ? 'present' : 'missing');
       const data = await api.listProjects(token);
       // Convert string array to objects with id and name
       const projectObjects = data.map((projectName) => ({
@@ -259,8 +295,7 @@ const App = () => {
   const createProject = async (projectName) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("token");
-      await api.createProject(projectName, token);
+      await api.createProject(projectName);
       await loadProjects(); // Reload projects list
       setCurrentProject({ name: projectName }); // Set the new project as current
       toast.success(`Project "${projectName}" created successfully`);
@@ -275,8 +310,7 @@ const App = () => {
   const deleteProject = async (projectId) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("token");
-      await api.deleteProject(projectId, token);
+      await api.deleteProject(projectId);
 
       setProjects((prev) => prev.filter((p) => p.id !== projectId));
       if (currentProject && currentProject.name === projectId) {
@@ -316,11 +350,9 @@ const App = () => {
         const relativePath = filePath;
 
         try {
-          const token = localStorage.getItem("token");
           const result = await api.readFile(
             currentProject.name,
-            relativePath,
-            token
+            relativePath
           );
           const fileName = filePath.split("/").pop();
           const newFile = {
@@ -376,8 +408,7 @@ const App = () => {
       // Extract relative path from the full project path
       const relativePath = filePath.replace(`${currentProject.name}/`, "");
 
-      const token = localStorage.getItem("token");
-      await api.saveFile(currentProject.name, relativePath, content, token);
+      await api.saveFile(currentProject.name, relativePath, content);
 
       setFileContents((prev) => ({ ...prev, [filePath]: content }));
 
@@ -404,21 +435,9 @@ const App = () => {
         return;
       }
 
-      const token = localStorage.getItem("token");
-      const normParent = (parentPath || "").replace(/\\+/g, "/");
-      const fullPath = normParent
-        ? `${normParent.replace(/\/$/, "")}/${fileName}`
-        : fileName;
+      const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
 
-      console.log("🔧 Create file debug:", {
-        parentPath,
-        fileName,
-        normParent,
-        fullPath,
-        projectName: currentProject.name,
-      });
-
-      await api.createEntry(currentProject.name, fullPath, "file", "", token);
+      await api.createEntry(currentProject.name, fullPath, "file", "");
 
       toast.success(`Created ${fileName}`);
       // Refresh file tree in explorer
@@ -436,12 +455,9 @@ const App = () => {
         return;
       }
 
-      const token = localStorage.getItem("token");
-      const normParent = (parentPath || "").replace(/\\+/g, "/");
-      const fullPath = normParent
-        ? `${normParent.replace(/\/$/, "")}/${folderName}`
-        : folderName;
-      await api.createEntry(currentProject.name, fullPath, "folder", "", token);
+      const fullPath = parentPath ? `${parentPath}/${folderName}` : folderName;
+
+      await api.createEntry(currentProject.name, fullPath, "folder", "");
 
       toast.success(`Created folder ${folderName}`);
       // Refresh file tree
@@ -466,8 +482,7 @@ const App = () => {
       // Extract relative path from absolute path
       const relativePath = filePath.replace(`${currentProject.name}/`, "");
 
-      const token = localStorage.getItem("token");
-      await api.deleteEntry(currentProject.name, relativePath, token);
+      await api.deleteEntry(currentProject.name, relativePath);
 
       // Close file if it's open
       closeFile(filePath);
@@ -657,10 +672,23 @@ const App = () => {
     );
   }
 
+  // Debug current state
+  console.log('🎯 Current state:', { 
+    currentPage, 
+    isAuthenticated, 
+    user: user?.email || 'none',
+    authLoading 
+  });
+
   // Landing page
   if (currentPage === "landing") {
     return (
-      <LandingPage onGetStarted={handleGoToAuth} onLogin={handleGoToAuth} />
+      <LandingPage 
+        onGetStarted={handleGoToAuth} 
+        onGoToEditor={handleGoToIDE}
+        isAuthenticated={isAuthenticated}
+        user={user}
+      />
     );
   }
 

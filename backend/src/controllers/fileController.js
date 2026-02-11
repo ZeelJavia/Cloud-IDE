@@ -61,7 +61,8 @@ class FileController {
         filePath,
         content,
         type,
-        req.user.id
+        req.user.id,
+        req.io
       );
       res.json(result);
     } catch (error) {
@@ -83,7 +84,8 @@ class FileController {
       const result = await fileService.deleteFileOrFolder(
         projectName,
         filePath,
-        req.user.id
+        req.user.id,
+        req.io
       );
       res.json(result);
     } catch (error) {
@@ -110,7 +112,8 @@ class FileController {
         projectName,
         oldPath,
         newName,
-        req.user.id
+        req.user.id,
+        req.io
       );
       res.json(result);
     } catch (error) {

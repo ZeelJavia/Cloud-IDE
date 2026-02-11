@@ -199,6 +199,87 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// Update profile endpoint
+router.put("/profile", authenticateToken, async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    // Validation
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    if (User && dbReady()) {
+      // Database path - update user profile
+      const user = await User.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Update fields
+      user.name = name.trim();
+
+      // Only allow email update for non-OAuth users
+      if (user.provider === "local" && email && email.trim()) {
+        // Check if email is already taken by another user
+        const existingUser = await User.findOne({
+          email: email.trim(),
+          _id: { $ne: user._id },
+        });
+        if (existingUser) {
+          return res.status(400).json({ error: "Email already in use" });
+        }
+        user.email = email.trim();
+      }
+
+      await user.save();
+
+      const updatedUser = {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        provider: user.provider,
+        picture: user.picture,
+      };
+
+      return res.json({
+        message: "Profile updated successfully",
+        user: updatedUser,
+      });
+    } else {
+      // Fallback in-memory path
+      const user = users.find((u) => u.id === req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Update fields
+      user.name = name.trim();
+
+      // Only allow email update for non-OAuth users
+      if (user.provider === "local" && email && email.trim()) {
+        // Check if email is already taken
+        const existingUser = users.find(
+          (u) => u.email === email.trim() && u.id !== user.id
+        );
+        if (existingUser) {
+          return res.status(400).json({ error: "Email already in use" });
+        }
+        user.email = email.trim();
+      }
+
+      const { password: _, ...userWithoutPassword } = user;
+      return res.json({
+        message: "Profile updated successfully",
+        user: userWithoutPassword,
+      });
+    }
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Verify token endpoint
 router.get("/verify", authenticateToken, async (req, res) => {
   try {

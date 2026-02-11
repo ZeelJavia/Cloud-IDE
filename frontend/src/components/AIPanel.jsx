@@ -12,7 +12,7 @@ import {
 import {
   VscCopilot,
 } from "react-icons/vsc";
-import { api } from "../lib/api";
+import { api, tokenManager } from "../lib/api";
 import "./AIPanel.css";
 
 const AIPanel = ({ activeFile, fileContents, onContentUpdate }) => {
@@ -75,7 +75,7 @@ const AIPanel = ({ activeFile, fileContents, onContentUpdate }) => {
             ? `Using the following existing file context (if relevant):\n\n${contextString}\n\nTask:\n`
             : "") + inputMessage;
 
-        const token = localStorage.getItem("token");
+        const token = tokenManager.getToken();
         const data = await api.aiGenerate({ prompt }, token);
 
         // Backend returns { files: [{ filename, content }], rawResponse }
@@ -109,7 +109,7 @@ const AIPanel = ({ activeFile, fileContents, onContentUpdate }) => {
           history: toHistory(messages),
           context: buildContext() || undefined,
         };
-        const token = localStorage.getItem("token");
+        const token = tokenManager.getToken();
         const data = await api.aiChat(body, token);
         setMessages((prev) => [
           ...prev,

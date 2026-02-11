@@ -2,6 +2,8 @@
  * AI Controller - Handles AI assistant chat and code generation requests
  */
 
+const aiService = require("../services/aiService");
+
 class AIController {
   async generateCode(req, res) {
     try {

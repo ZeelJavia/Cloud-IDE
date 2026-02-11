@@ -8,7 +8,7 @@ import {
   FiSliders,
 } from "react-icons/fi";
 import { VscCircleFilled } from "react-icons/vsc";
-import { api } from "../lib/api";
+import { api, tokenManager } from "../lib/api";
 import RunConfigModal from "./RunConfigModal";
 import "./CodeEditor.css";
 
@@ -232,16 +232,12 @@ const CodeEditor = ({
         );
         return; // streaming will handle output
       } catch {}
-      const token = localStorage.getItem("token");
       try {
-        const data = await api.runFile(
-          {
+        const data = await api.runFile({
             projectName,
             filePath: relPath,
             args: [],
-          },
-          token
-        );
+          });
         if (onRun) {
           onRun({
             stdout: data.stdout || "",
@@ -299,7 +295,7 @@ const CodeEditor = ({
               </div>
               <div className="feature">
                 <span className="feature-icon">🎨</span>
-                <span>Syntax highlighting for 100+ languages</span>
+                <span>Syntax highlighting for 10+ languages</span>
               </div>
               <div className="feature">
                 <span className="feature-icon">☁️</span>

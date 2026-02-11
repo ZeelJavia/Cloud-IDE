@@ -2,17 +2,7 @@ const ContainerService = require("../services/containerService");
 // Updated path after moving runner.js into src
 const { runFile } = require("../runner");
 const config = require("../config");
-const {
-  genId,
-  sanitizeArgs,
-  sanitizeEnvVars,
-} = require("../utils/validationUtils");
-const {
-  dockerImageExists,
-  dockerPullImage,
-  ensureWarmContainer,
-  reusePool,
-} = require("../utils/dockerUtils");
+const { genId, sanitizeArgs } = require("../utils/validationUtils");
 const { spawn } = require("child_process");
 const { setCurrentProject } = require("../utils/webServerState");
 const fs = require("fs");
@@ -134,8 +124,7 @@ const socketHandlers = (io) => {
           } else {
             // Announce manual web serving option for non-web projects
             const session = containerTerminal.getSession(terminalId);
-            const availablePort =
-              session?.mappedPort || config.WEB_PORT || 8088;
+            const availablePort = session?.mappedPort || "auto";
             socket.emit("terminal-output", {
               terminalId,
               output: `🌐 Web projects are served at: http://localhost:${availablePort} (start with: serve)\n`,
@@ -273,11 +262,7 @@ const socketHandlers = (io) => {
 
     // Start web server in container
     socket.on("start-web-server", async (data) => {
-      const {
-        terminalId: rawTerminalId,
-        port = 8088,
-        workingDirectory,
-      } = data || {};
+      const { terminalId: rawTerminalId, port, workingDirectory } = data || {};
 
       // Extract the actual ID if terminalId is an object
       const terminalId =
@@ -387,9 +372,9 @@ const socketHandlers = (io) => {
             console.error(
               `   ❌ Web server failed to start (exit code: ${result.code})`
             );
-            // Get the intended port from session or use default
+            // Get the intended port from session or use dynamic
             const sess = containerTerminal.getSession(terminalId);
-            const intendedPort = sess?.mappedPort || port || 8088;
+            const intendedPort = sess?.mappedPort || port || "dynamic";
             socket.emit("terminal-output", {
               terminalId,
               output: `Web server failed to start on port ${intendedPort}. Ensure port is free and try again.\n`,
@@ -414,134 +399,6 @@ const socketHandlers = (io) => {
         });
         socket.emit("command-completed", { terminalId, exitCode: -1 });
       }
-    });
-
-    // Execute ad-hoc terminal command (legacy/fallback)
-    socket.on("execute-command", (payload = {}) => {
-      const { terminalId, command, workingDirectory } = payload;
-      if (!terminalId || !command) return;
-
-      console.log(`[DEBUG] execute-command received:`, {
-        terminalId,
-        command,
-        workingDirectory,
-        PROJECTS_DIR: config.getProjectsDir(),
-      });
-
-      let cwd = config.getProjectsDir();
-      try {
-        if (workingDirectory && typeof workingDirectory === "string") {
-          const candidate = path.isAbsolute(workingDirectory)
-            ? workingDirectory
-            : path.join(config.getProjectsDir(), workingDirectory);
-          const resolved = path.resolve(candidate);
-
-          console.log(`[DEBUG] Directory resolution:`, {
-            candidate,
-            resolved,
-            projectsDir: path.resolve(config.getProjectsDir()),
-            exists: fs.existsSync(resolved),
-            startsWithProjects: resolved.startsWith(
-              path.resolve(config.getProjectsDir())
-            ),
-          });
-
-          if (
-            resolved.startsWith(path.resolve(config.getProjectsDir())) &&
-            fs.existsSync(resolved)
-          ) {
-            cwd = resolved;
-            console.log(`[DEBUG] Using cwd: ${cwd}`);
-          } else {
-            console.log(
-              `[DEBUG] Using default cwd: ${cwd} (validation failed)`
-            );
-          }
-        }
-      } catch (e) {
-        console.log(`[DEBUG] Error in directory resolution:`, e.message);
-      }
-
-      const isWin = process.platform === "win32";
-      const shell = isWin ? "powershell.exe" : "/bin/bash";
-      const shellArgs = isWin
-        ? [
-            "-NoLogo",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            command,
-          ]
-        : ["-lc", command];
-
-      const child = spawn(shell, shellArgs, { cwd, env: process.env });
-      activeRuns.set(terminalId, { mode: "local", child });
-
-      child.stdout.on("data", (c) =>
-        socket.emit("terminal-output", { terminalId, output: c.toString() })
-      );
-      child.stderr.on("data", (c) =>
-        socket.emit("terminal-output", {
-          terminalId,
-          output: c.toString(),
-          error: true,
-        })
-      );
-      child.on("close", (code) => {
-        activeRuns.delete(terminalId);
-
-        // For directory navigation commands, get and return the new working directory
-        const isDirectoryCommand =
-          command.trim().toLowerCase().startsWith("cd ") ||
-          command.trim().toLowerCase() === "cd";
-
-        let currentWorkingDir = null;
-        if (isDirectoryCommand) {
-          try {
-            // Get the current working directory after cd command
-            const { spawnSync } = require("child_process");
-            const pwdResult = isWin
-              ? spawnSync(
-                  "powershell.exe",
-                  [
-                    "-NoProfile",
-                    "-Command",
-                    "Get-Location | Select-Object -ExpandProperty Path",
-                  ],
-                  { cwd, encoding: "utf8" }
-                )
-              : spawnSync("pwd", [], { cwd, encoding: "utf8" });
-
-            if (pwdResult.status === 0 && pwdResult.stdout) {
-              currentWorkingDir = pwdResult.stdout.trim();
-              // Convert to relative path from PROJECTS_DIR
-              const resolved = path.resolve(currentWorkingDir);
-              const projectsResolved = path.resolve(config.getProjectsDir());
-              if (resolved.startsWith(projectsResolved)) {
-                currentWorkingDir = path.relative(projectsResolved, resolved);
-              }
-            }
-          } catch (e) {
-            // Ignore errors in getting pwd
-          }
-        }
-
-        socket.emit("command-completed", {
-          terminalId,
-          exitCode: code ?? 0,
-          workingDirectory: currentWorkingDir,
-        });
-      });
-      child.on("error", (err) => {
-        activeRuns.delete(terminalId);
-        socket.emit("terminal-output", {
-          terminalId,
-          output: `Failed to start process: ${err.message}\n`,
-          error: true,
-        });
-        socket.emit("command-completed", { terminalId, exitCode: -1 });
-      });
     });
 
     // Containerized file execution (compat; currently uses local runner)

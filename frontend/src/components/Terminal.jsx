@@ -148,7 +148,7 @@ const Terminal = ({ socket, project, user }) => {
         }));
 
         if (containerInfo.url) {
-          const port = containerInfo.url.split(':')[2] || '8088';
+          const port = containerInfo.url.split(':')[2] || 'dynamic';
           setOutput((prev) => ({
             ...prev,
             [terminalId]: [
@@ -479,7 +479,13 @@ const Terminal = ({ socket, project, user }) => {
         // Emit containerized run-file event to backend
         if (activeTerminal.containerized) {
           const token = localStorage.getItem("token");
-          const user = JSON.parse(localStorage.getItem("user") || "{}");
+          let userData = null;
+          try {
+            userData = JSON.parse(localStorage.getItem("user") || "{}");
+          } catch (e) {
+            userData = {};
+          }
+          const userId = userData?.id || user?.id;
           const currentState = terminalStates[activeTerminal.id] || {};
 
           socket.emit("run-container-file", {
@@ -489,7 +495,7 @@ const Terminal = ({ socket, project, user }) => {
             args,
             stdinText,
             envVars,
-            userId: user.id,
+            userId: userId,
             workingDirectory: currentState?.currentDirectory || "/workspace",
           });
         } else {
@@ -520,18 +526,30 @@ const Terminal = ({ socket, project, user }) => {
       if (socket && user && project) {
         console.log("Terminal component unmounting, cleaning up containers...");
 
-        // Notify backend about project close
-        socket.emit("close-project", {
-          projectName: project.name || project.id,
-          userId: user.id,
-        });
+        let userData = null;
+        try {
+          userData = JSON.parse(localStorage.getItem("user") || "{}");
+        } catch (e) {
+          userData = {};
+        }
+        const userId = userData?.id || user?.id;
+        
+        if (userId) {
+          // Notify backend about project close
+          socket.emit("close-project", {
+            projectName: project.name || project.id,
+            userId: userId,
+          });
+        }
 
         // Also notify about any active terminals
         terminals.forEach((terminal) => {
-          socket.emit("close-terminal", {
-            terminalId: terminal.id,
-            userId: user.id,
-          });
+          if (userId) {
+            socket.emit("close-terminal", {
+              terminalId: terminal.id,
+              userId: userId,
+            });
+          }
         });
       }
     };
@@ -582,23 +600,60 @@ const Terminal = ({ socket, project, user }) => {
     // Initialize container for this terminal
     if (socket && project) {
       const token = localStorage.getItem("token");
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      let userData = null;
+      
+      try {
+        userData = JSON.parse(localStorage.getItem("user") || "{}");
+      } catch (e) {
+        console.warn("Failed to parse user from localStorage:", e);
+        userData = {};
+      }
+      
+      // Fallback to user prop if localStorage user is invalid
+      const userId = userData?.id || user?.id;
+      
+      if (!userId) {
+        console.error("❌ Cannot initialize container: No user ID available");
+        setOutput((prev) => ({
+          ...prev,
+          [newTerminal.id]: [
+            ...prev[newTerminal.id],
+            {
+              type: "error",
+              content: "❌ Authentication required. Please log in to use containers.",
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+        return;
+      }
 
+      console.log("🚀 Initializing container with userId:", userId);
       socket.emit("init-container-terminal", {
         terminalId: newTerminal.id,
         projectName: project.name || project.id,
-        userId: user.id,
+        userId: userId,
       });
     }
   };
 
   const closeTerminal = (terminalId) => {
     // Notify backend about terminal closure for container cleanup
-    if (socket && user) {
-      socket.emit("close-terminal", {
-        terminalId,
-        userId: user.id,
-      });
+    if (socket) {
+      let userData = null;
+      try {
+        userData = JSON.parse(localStorage.getItem("user") || "{}");
+      } catch (e) {
+        userData = {};
+      }
+      const userId = userData?.id || user?.id;
+      
+      if (userId) {
+        socket.emit("close-terminal", {
+          terminalId,
+          userId: userId,
+        });
+      }
     }
 
     setTerminals((prev) => prev.filter((t) => t.id !== terminalId));
@@ -670,7 +725,7 @@ const Terminal = ({ socket, project, user }) => {
 
     // Handle web server commands
     if (cmd === "serve" || cmd === "webserver" || cmd === "http-server") {
-      const port = args[0] || "8080";
+      const port = args[0] || "auto";
       return {
         type: "start-web-server",
         port: port,
@@ -934,7 +989,13 @@ const Terminal = ({ socket, project, user }) => {
 
           if (activeTerminal.containerized) {
             const token = localStorage.getItem("token");
-            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            let userData = null;
+            try {
+              userData = JSON.parse(localStorage.getItem("user") || "{}");
+            } catch (e) {
+              userData = {};
+            }
+            const userId = userData?.id || user?.id;
             const currentState = terminalStates[activeTerminal.id] || {};
 
             socket.emit("run-container-file", {
@@ -942,7 +1003,7 @@ const Terminal = ({ socket, project, user }) => {
               projectName,
               filePath: parsed.filePath,
               args: parsed.args,
-              userId: user.id,
+              userId: userId,
               envVars: {},
               workingDirectory: currentState?.currentDirectory || "/workspace",
             });
